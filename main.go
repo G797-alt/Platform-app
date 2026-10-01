@@ -1,15 +1,129 @@
 package main
-import("context";"database/sql";"encoding/csv";"encoding/json";"fmt";"html";"net/http";"os";"strconv";"strings";"time";_ "github.com/jackc/pgx/v5/stdlib")
+import(
+"context"
+"database/sql"
+"fmt"
+"html"
+"net/http"
+"os"
+"strconv"
+"strings"
+"time"
+_ "github.com/jackc/pgx/v5/stdlib"
+)
 var db *sql.DB
-func init(){u:=os.Getenv("DATABASE_URL");if u==""{return};var err error;db,err=sql.Open("pgx",u);ctx,cancel:=context.WithTimeout(context.Background(),15*time.Second);defer cancel();_ = err;db.PingContext(ctx);db.Exec(`CREATE TABLE IF NOT EXISTS wanachama(id SERIAL PRIMARY KEY, jina TEXT NOT NULL)`);db.Exec(`CREATE TABLE IF NOT EXISTS mahida(id SERIAL PRIMARY KEY, wanachama_id INT, mwezi INT, mwaka INT, hisa TEXT, klasi TEXT, maelezo TEXT, kiasi BIGINT, aina TEXT, tarehe TIMESTAMP DEFAULT NOW())`);db.Exec(`CREATE TABLE IF NOT EXISTS mikopo_chukua(id SERIAL PRIMARY KEY, wanachama_id INT, kiasi BIGINT, tarehe TIMESTAMP DEFAULT NOW())`);db.Exec(`CREATE TABLE IF NOT EXISTS mikopo_rudisha(id SERIAL PRIMARY KEY, wanachama_id INT, kiasi BIGINT, tarehe TIMESTAMP DEFAULT NOW())`);var c int;db.QueryRow("SELECT COUNT(*) FROM wanachama").Scan(&c);if c==0{db.Exec("INSERT INTO wanachama(jina) VALUES ($1)", "Charles Joseph Mgaya");db.Exec("INSERT INTO mikopo_chukua(wanachama_id,kiasi) VALUES (1,3000000)");db.Exec("INSERT INTO mikopo_rudisha(wanachama_id,kiasi) VALUES (1,300000)")}}
-func main(){http.HandleFunc("/",home);http.HandleFunc("/wanachama/add",addMember);http.HandleFunc("/wanachama/del",delMember);http.HandleFunc("/hifadhi",hifadhi);http.HandleFunc("/mikopo/chukua",chukuaMkopo);http.HandleFunc("/mikopo/rudisha",rudishaMkopo);http.HandleFunc("/mikopo/rudisha/add",addRudisha);http.HandleFunc("/backup",backupJSON);http.HandleFunc("/csv",csvExport);p:=os.Getenv("PORT");if p==""{p="10000"};http.ListenAndServe(":"+p,nil)}
-func fmtNum(n int64)string{s:=strconv.FormatInt(n,10);if len(s)<=3{return s};var b strings.Builder;for i,c:=range s{if i>0&&(len(s)-i)%3==0{b.WriteString(",")};b.WriteRune(c)};return b.String()}
-func home(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");mweziStr:=r.URL.Query().Get("mwezi");if mweziStr==""{mweziStr="Okt"};mwakaStr:=r.URL.Query().Get("mwaka");if mwakaStr==""{mwakaStr="2026"};mwaka,_:=strconv.Atoi(mwakaStr);mMap:=map[string]int{"Jan":1,"Feb":2,"Mar":3,"Apr":4,"Mei":5,"Jun":6,"Jul":7,"Ago":8,"Sep":9,"Okt":10,"Nov":11,"Des":12};mNum:=mMap[mweziStr];if mNum==0{mNum=10};var mapato,matumizi int64;type WM struct{ID int;Jina string};var list []WM;if db!=nil{db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mahida WHERE aina='mapato' AND mwezi=$1 AND mwaka=$2",mNum,mwaka).Scan(&mapato);db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mahida WHERE aina='matumizi' AND mwezi=$1 AND mwaka=$2",mNum,mwaka).Scan(&matumizi);rows,_:=db.Query("SELECT id,jina FROM wanachama ORDER BY id ASC");if rows!=nil{defer rows.Close();for rows.Next(){var id int;var j string;rows.Scan(&id,&j);list=append(list,WM{id,j})}}};baki:=mapato-matumizi;monthOpts:="";for _,mo:=range []string{"Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ago","Sep","Okt","Nov","Des"}{sel:="";if mo==mweziStr{sel="selected"};monthOpts+=fmt.Sprintf("<option %s>%s</option>",sel,mo)};yearOpts:="";for y:=2023;y<=2035;y++{sel:="";if strconv.Itoa(y)==mwakaStr{sel="selected"};yearOpts+=fmt.Sprintf("<option %s>%d</option>",sel,y)};memberOpts:="";for _,wm:=range list{memberOpts+=fmt.Sprintf("<option value=%d>%s</option>",wm.ID,html.EscapeString(wm.Jina))};type Deni struct{Jina string;Chukua int64;Rudisha int64;Baki int64;ID int};var deniList []Deni;if db!=nil{for _,wm:=range list{var ch,ru int64;db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mikopo_chukua WHERE wanachama_id=$1",wm.ID).Scan(&ch);db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mikopo_rudisha WHERE wanachama_id=$1",wm.ID).Scan(&ru);if ch>0{deniList=append(deniList,Deni{wm.Jina,ch,ru,ch-ru,wm.ID})}}};type Hist struct{Jina, Klasi, Maelezo string; Kiasi int64; Tarehe string};var histList []Hist;if db!=nil{rows,_:=db.Query("SELECT w.jina,m.klasi,m.maelezo,m.kiasi,TO_CHAR(m.tarehe,'DD/MM HH24:MI') FROM mahida m LEFT JOIN wanachama w ON w.id=m.wanachama_id WHERE m.mwezi=$1 AND m.mwaka=$2 ORDER BY m.id DESC LIMIT 50",mNum,mwaka);if rows!=nil{defer rows.Close();for rows.Next(){var j,kl,ma,ta string;var k int64;rows.Scan(&j,&kl,&ma,&k,&ta);histList=append(histList,Hist{j,kl,ma,k,ta})}}};type Rej struct{Jina string;Kiasi int64;ID int};var rejList []Rej;if db!=nil{rows,_:=db.Query("SELECT w.jina,m.kiasi,m.id FROM mikopo_rudisha m JOIN wanachama w ON w.id=m.wanachama_id ORDER BY m.id DESC LIMIT 20");if rows!=nil{defer rows.Close();for rows.Next(){var j string;var k int64;var id int;rows.Scan(&j,&k,&id);rejList=append(rejList,Rej{j,k,id})}}};fmt.Fprintf(w,`<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema Mahida</title><style>*{box-sizing:border-box;font-family:system-ui}body{margin:0;background:#f3f6f3;color:#222}.header{background:#1a7a3b;color:#fff;padding:12px;text-align:center;font-weight:700;font-size:17px;position:sticky;top:0;z-index:20}.container{padding:10px;max-width:650px;margin:auto}.row{display:flex;gap:8px;margin-bottom:10px}select,input{flex:1;padding:11px;border:1px solid #ddd;border-radius:10px;background:#fff;font-size:14px}.btn{padding:11px 16px;border:0;border-radius:10px;font-weight:700;color:#fff;cursor:pointer}.btn-green{background:#1a7a3b}.cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}.card{padding:10px;border-radius:10px;color:#fff;text-align:center;font-weight:700}.card small{display:block;font-weight:400;font-size:11px}.card b{font-size:18px}.box{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}.box h3{margin:0 0 10px;color:#1a7a3b;font-size:15px;display:flex;justify-content:space-between;align-items:center}.member{border-bottom:1px solid #eee;padding:9px 0;display:flex;justify-content:space-between;align-items:center}.input-full{width:100%%;margin:6px 0;padding:12px;border:1px solid #ddd;border-radius:10px}.btn-big{width:100%%;background:#1a7a3b;padding:13px;font-size:16px;margin-top:8px;border:0;color:#fff;border-radius:10px;font-weight:700}.t{width:100%%;border-collapse:collapse;font-size:13px}.t th{background:#e8f5e9;text-align:left;padding:8px;color:#1a7a3b}.t td{padding:8px;border-bottom:1px solid #eee}.b-orange{background:#ff6f00;color:#fff;padding:12px;border-radius:10px;width:100%%;border:0;font-weight:700;margin:6px 0}.b-gray{background:#757575;color:#fff;padding:12px;border-radius:10px;width:100%%;border:0;font-weight:700;margin:6px 0}.b-green2{background:#1a7a3b;color:#fff;padding:12px;border-radius:10px;width:100%%;border:0;font-weight:700;margin:6px 0}</style></head><body><div class=header>Uwashusema Mahida - 2023 hadi 2035</div><div class=container><form method=GET action=/ class=row><select name=mwezi>%s</select><select name=mwaka>%s</select><button class="btn btn-green">Sawa</button></form><div class=cards><div class=card style="background:#1a7a3b"><small>MAPATO TZS</small><b>%d</b></div><div class=card style="background:#d93025"><small>MATUMIZI TZS</small><b>%d</b></div><div class=card style="background:#1565c0"><small>Bakaa TZS %d</small></div></div><div class=box><h3>Wanachama <button onclick="document.getElementById('addM').style.display='block'" class="btn btn-green" style="padding:6px 12px;font-size:13px">+ Mpya</button></h3><div id=addM style="display:none;margin-bottom:10px"><form method=POST action=/wanachama/add class=row><input name=jina placeholder="Jina la Mwanachama" required class=input-full><button class="btn btn-green">Hifadhi</button></form></div>`,monthOpts,yearOpts,mapato,matumizi,baki);for _,wm:=range list{fmt.Fprintf(w,`<div class=member><span>%s</span><span><a href="/wanachama/del?id=%d" onclick="return confirm('Futa?')" style="text-decoration:none;background:#fce4ec;padding:4px 8px;border-radius:6px;color:#c62828">X</a></span></div>`,html.EscapeString(wm.Jina),wm.ID)};fmt.Fprintf(w,`</div><div class=box><h3>Ingiza Data</h3><form method=POST action=/hifadhi><input type=hidden name=mwezi value=%d><input type=hidden name=mwaka value=%d><select name=wanachama_id class=input-full required><option value="">Chagua</option>%s</select><select name=hisa class=input-full><option value="">Hisa</option><option>Hisa</option><option>Mapato</option><option>Matumizi</option><option>Mkopo</option><option>Marejesho</option></select><input name=klasi placeholder="Klasi" class=input-full required><input name=maelezo placeholder="Maelezo" class=input-full><input name=kiasi type=number placeholder="Kiasi" class=input-full required><select name=aina class=input-full><option value=mapato>Mapato</option><option value=matumizi>Matumizi</option></select><button class="btn-big">Hifadhi</button></form></div><div class=box><h3>Wanaorudisha Mikopo</h3><table class=t><tr><th>Jina</th><th>Kiasi</th><th>✏️ / X</th></tr>`,mNum,mwaka,memberOpts);if len(rejList)==0{fmt.Fprint(w,`<tr><td colspan=3 style="color:#999">Hakuna</td></tr>`)}else{for _,rje:=range rejList{fmt.Fprintf(w,`<tr><td>%s</td><td>%d</td><td><a href="/mikopo/rudisha?id=%d">✏️</a> / <a href="/mikopo/rudisha?id=%d&del=1">X</a></td></tr>`,html.EscapeString(rje.Jina),rje.Kiasi,rje.ID,rje.ID)}};fmt.Fprint(w,`</table><form method=POST action=/mikopo/rudisha/add style="margin-top:8px" class=row><select name=wanachama_id class=input-full required><option value="">Chagua</option>`);for _,wm:=range list{fmt.Fprintf(w,`<option value=%d>%s</option>`,wm.ID,html.EscapeString(wm.Jina))};fmt.Fprint(w,`</select><input name=kiasi type=number placeholder="Kiasi" required><button class="btn btn-green">Rudisha</button></form></div><div class=box><h3>Wenye Deni la Mkopo</h3><table class=t><tr><th>Jina</th><th>Chukua</th><th>Rudisha</th><th>Baki</th><th>✏️</th></tr>`);if len(deniList)==0{fmt.Fprint(w,`<tr><td colspan=5 style="color:#999">Hakuna</td></tr>`)}else{for _,d:=range deniList{fmt.Fprintf(w,`<tr><td>%s</td><td>%s</td><td>%s</td><td style="color:#c62828;font-weight:700">%s</td><td><a href="/" style="background:#1a7a3b;color:#fff;padding:4px 8px;border-radius:6px;text-decoration:none">✏️</a></td></tr>`,html.EscapeString(d.Jina),fmtNum(d.Chukua),fmtNum(d.Rudisha),fmtNum(d.Baki),d.ID)}};fmt.Fprint(w,`</table><form method=POST action=/mikopo/chukua style="margin-top:8px" class=row><select name=wanachama_id required><option value="">Chagua</option>`);for _,wm:=range list{fmt.Fprintf(w,`<option value=%d>%s</option>`,wm.ID,html.EscapeString(wm.Jina))};fmt.Fprint(w,`</select><input name=kiasi type=number placeholder="Mkopo" required><button class="btn btn-green">Weka</button></form></div><div class=box><h3>Historia ya Mwezi Huu</h3>`);if len(histList)==0{fmt.Fprint(w,`<div style="color:#999">Hakuna mwezi huu</div>`)}else{fmt.Fprint(w,`<table class=t><tr><th>Jina</th><th>Klasi</th><th>Kiasi</th><th>Tarehe</th></tr>`);for _,h:=range histList{fmt.Fprintf(w,`<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>`,html.EscapeString(h.Jina),html.EscapeString(h.Klasi),h.Kiasi,h.Tarehe)};fmt.Fprint(w,`</table>`)};fmt.Fprintf(w,`</div><div class=box><h3>Hifadhi ya Kudumu & Tuma</h3><a href=/backup><button class=b-orange>💾 Pakua Backup ya Kudumu (JSON)</button></a><a href=/csv><button class=b-gray>📊 Pakua Excel CSV</button></a><button class=b-green2 onclick="tumaWA()">📄 Tuma WhatsApp Ripoti</button></div></div><script>function tumaWA(){var txt="*Uwashusema Mahida Ripoti*%%0A MAPATO: %d%%0A MATUMIZI: %d%%0A BAKAA: %d%%0A Mwezi: %s %s";window.open("https://wa.me/?text="+txt,"_blank");}</script></body></html>`,mapato,matumizi,baki,mweziStr,mwakaStr,mNum,mwaka)}
-func addMember(w http.ResponseWriter,r *http.Request){r.ParseForm();j:=r.FormValue("jina");if j!=""&&db!=nil{db.Exec("INSERT INTO wanachama(jina) VALUES ($1)",j)};http.Redirect(w,r,"/",302)}
-func delMember(w http.ResponseWriter,r *http.Request){id:=r.URL.Query().Get("id");if db!=nil&&id!=""{db.Exec("DELETE FROM wanachama WHERE id=$1",id)};http.Redirect(w,r,"/",302)}
-func hifadhi(w http.ResponseWriter,r *http.Request){r.ParseForm();mwezi:=r.FormValue("mwezi");mwaka:=r.FormValue("mwaka");hisa:=r.FormValue("hisa");klasi:=r.FormValue("klasi");maelezo:=r.FormValue("maelezo");kiasi:=r.FormValue("kiasi");aina:=r.FormValue("aina");wid:=r.FormValue("wanachama_id");if db!=nil{m,_:=strconv.Atoi(mwezi);y,_:=strconv.Atoi(mwaka);k,_:=strconv.ParseInt(kiasi,10,64);wID,_:=strconv.Atoi(wid);db.Exec("INSERT INTO mahida(wanachama_id,mwezi,mwaka,hisa,klasi,maelezo,kiasi,aina) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",wID,m,y,hisa,klasi,maelezo,k,aina)};http.Redirect(w,r,fmt.Sprintf("/?mwezi=Okt&mwaka=%s",mwaka),302)}
-func chukuaMkopo(w http.ResponseWriter,r *http.Request){r.ParseForm();wid:=r.FormValue("wanachama_id");kiasi:=r.FormValue("kiasi");if db!=nil{wID,_:=strconv.Atoi(wid);k,_:=strconv.ParseInt(kiasi,10,64);db.Exec("INSERT INTO mikopo_chukua(wanachama_id,kiasi) VALUES ($1,$2)",wID,k)};http.Redirect(w,r,"/",302)}
-func rudishaMkopo(w http.ResponseWriter,r *http.Request){id:=r.URL.Query().Get("id");del:=r.URL.Query().Get("del");if db!=nil&&id!=""&&del=="1"{db.Exec("DELETE FROM mikopo_rudisha WHERE id=$1",id)};http.Redirect(w,r,"/",302)}
-func addRudisha(w http.ResponseWriter,r *http.Request){r.ParseForm();wid:=r.FormValue("wanachama_id");kiasi:=r.FormValue("kiasi");if db!=nil{wID,_:=strconv.Atoi(wid);k,_:=strconv.ParseInt(kiasi,10,64);db.Exec("INSERT INTO mikopo_rudisha(wanachama_id,kiasi) VALUES ($1,$2)",wID,k)};http.Redirect(w,r,"/",302)}
-func backupJSON(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","application/json");w.Header().Set("Content-Disposition","attachment; filename=uwashusema-backup.json");type Data struct{Wanachama []map[string]interface{} `json:"wanachama"`;Mahida []map[string]interface{} `json:"mahida"`};var d Data;if db!=nil{rows,_:=db.Query("SELECT id,jina FROM wanachama");if rows!=nil{defer rows.Close();for rows.Next(){var id int;var j string;rows.Scan(&id,&j);d.Wanachama=append(d.Wanachama,map[string]interface{}{"id":id,"jina":j})}};rows,_:=db.Query("SELECT wanachama_id,mwezi,mwaka,hisa,klasi,maelezo,kiasi,aina FROM mahida");if rows!=nil{defer rows.Close();for rows.Next(){var wid,m,yr int;var hisa,kl,ma,ai string;var k int64;rows.Scan(&wid,&m,&yr,&hisa,&kl,&ma,&k,&ai);d.Mahida=append(d.Mahida,map[string]interface{}{"wid":wid,"mwezi":m,"mwaka":yr,"hisa":hisa,"klasi":kl,"ma":ma,"kiasi":k,"aina":ai})}}};json.NewEncoder(w).Encode(d)}
-func csvExport(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/csv");w.Header().Set("Content-Disposition","attachment; filename=uwashusema.csv");cw:=csv.NewWriter(w);cw.Write([]string{"Jina","Mwezi","Mwaka","Hisa","Klasi","Maelezo","Kiasi","Aina"});if db!=nil{rows,_:=db.Query("SELECT w.jina,m.mwezi,m.mwaka,m.hisa,m.klasi,m.maelezo,m.kiasi,m.aina FROM mahida m LEFT JOIN wanachama w ON w.id=m.wanachama_id ORDER BY m.id DESC");if rows!=nil{defer rows.Close();for rows.Next(){var j,hisa,kl,ma,ai string;var m,yr int;var k int64;rows.Scan(&j,&m,&yr,&hisa,&kl,&ma,&k,&ai);cw.Write([]string{j,strconv.Itoa(m),strconv.Itoa(yr),hisa,kl,ma,strconv.FormatInt(k,10),ai})}}};cw.Flush()}
+var err error
+func init(){
+u:=os.Getenv("DATABASE_URL")
+if u==""{return}
+db,err=sql.Open("pgx",u)
+ctx,cancel:=context.WithTimeout(context.Background(),10*time.Second)
+defer cancel()
+db.PingContext(ctx)
+db.Exec("CREATE TABLE IF NOT EXISTS wanachama(id SERIAL PRIMARY KEY, jina TEXT)")
+db.Exec("CREATE TABLE IF NOT EXISTS mahida(id SERIAL PRIMARY KEY, wanachama_id INT, mwezi INT, mwaka INT, hisa TEXT, klasi TEXT, maelezo TEXT, kiasi BIGINT, aina TEXT)")
+db.Exec("CREATE TABLE IF NOT EXISTS mikopo_chukua(id SERIAL PRIMARY KEY, wanachama_id INT, kiasi BIGINT)")
+db.Exec("CREATE TABLE IF NOT EXISTS mikopo_rudisha(id SERIAL PRIMARY KEY, wanachama_id INT, kiasi BIGINT)")
+var c int
+db.QueryRow("SELECT COUNT(*) FROM wanachama").Scan(&c)
+if c==0{
+db.Exec("INSERT INTO wanachama(jina) VALUES ('Charles Joseph Mgaya')")
+db.Exec("INSERT INTO mikopo_chukua(wanachama_id,kiasi) VALUES (1,3000000)")
+db.Exec("INSERT INTO mikopo_rudisha(wanachama_id,kiasi) VALUES (1,300000)")
+}
+}
+func main(){
+http.HandleFunc("/",home)
+http.HandleFunc("/add",addM)
+http.HandleFunc("/del",delM)
+http.HandleFunc("/save",save)
+http.HandleFunc("/chukua",chukua)
+http.HandleFunc("/rudisha",rudisha)
+http.HandleFunc("/delr",delr)
+p:=os.Getenv("PORT")
+if p==""{p="10000"}
+http.ListenAndServe(":"+p,nil)
+}
+func fmtN(n int64)string{
+s:=strconv.FormatInt(n,10)
+if len(s)<=3{return s}
+var b strings.Builder
+for i,ch:=range s{
+if i>0&&(len(s)-i)%3==0{b.WriteString(",")}
+b.WriteRune(ch)
+}
+return b.String()
+}
+func home(w http.ResponseWriter,r *http.Request){
+w.Header().Set("Content-Type","text/html; charset=utf-8")
+mz:=r.URL.Query().Get("mwezi")
+if mz==""{mz="Okt"}
+mwS:=r.URL.Query().Get("mwaka")
+if mwS==""{mwS="2026"}
+mw,_:=strconv.Atoi(mwS)
+mp:=map[string]int{"Jan":1,"Feb":2,"Mar":3,"Apr":4,"Mei":5,"Jun":6,"Jul":7,"Ago":8,"Sep":9,"Okt":10,"Nov":11,"Des":12}
+mNum:=mp[mz]
+if mNum==0{mNum=10}
+var mapato,matumizi int64
+type W struct{ID int; Jina string}
+var list []W
+if db!=nil{
+db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mahida WHERE aina='mapato' AND mwezi=$1 AND mwaka=$2",mNum,mw).Scan(&mapato)
+db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mahida WHERE aina='matumizi' AND mwezi=$1 AND mwaka=$2",mNum,mw).Scan(&matumizi)
+rows,_:=db.Query("SELECT id,jina FROM wanachama ORDER BY id")
+if rows!=nil{defer rows.Close();for rows.Next(){var id int;var j string;rows.Scan(&id,&j);list=append(list,W{id,j})}}
+}
+baki:=mapato-matumizi
+mo:="";for _,o:=range []string{"Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ago","Sep","Okt","Nov","Des"}{s:="";if o==mz{s="selected"};mo+=fmt.Sprintf("<option %s>%s</option>",s,o)}
+yo:="";for y:=2023;y<=2035;y++{s:="";if strconv.Itoa(y)==mwS{s="selected"};yo+=fmt.Sprintf("<option %s>%d</option>",s,y)}
+mop:="";for _,wm:=range list{mop+=fmt.Sprintf("<option value=%d>%s</option>",wm.ID,html.EscapeString(wm.Jina))}
+fmt.Fprintf(w,`<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema</title><style>*{box-sizing:border-box;font-family:system-ui}body{margin:0;background:#f3f6f3}.h{background:#1a7a3b;color:#fff;padding:12px;text-align:center;font-weight:700}.c{padding:10px;max-width:650px;margin:auto}.r{display:flex;gap:8px;margin-bottom:10px}select,input{flex:1;padding:11px;border:1px solid #ddd;border-radius:10px;background:#fff}.b{padding:11px 16px;border:0;border-radius:10px;font-weight:700;color:#fff;background:#1a7a3b}.cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}.card{padding:10px;border-radius:10px;color:#fff;text-align:center;font-weight:700}.card small{display:block;font-weight:400;font-size:11px}.card b{font-size:18px}.box{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px}.box h3{margin:0 0 10px;color:#1a7a3b;font-size:15px;display:flex;justify-content:space-between}.mem{border-bottom:1px solid #eee;padding:9px 0;display:flex;justify-content:space-between}.full{width:100%%;margin:6px 0;padding:12px;border:1px solid #ddd;border-radius:10px}.big{width:100%%;background:#1a7a3b;padding:13px;color:#fff;border:0;border-radius:10px;font-weight:700;margin-top:8px}.t{width:100%%;border-collapse:collapse;font-size:13px}.t th{background:#e8f5e9;padding:8px;text-align:left;color:#1a7a3b}.t td{padding:8px;border-bottom:1px solid #eee}</style></head><body><div class=h>Uwashusema Mahida - 2023 hadi 2035</div><div class=c><form method=GET action=/ class=r><select name=mwezi>%s</select><select name=mwaka>%s</select><button class=b>Sawa</button></form><div class=cards><div class=card style="background:#1a7a3b"><small>MAPATO TZS</small><b>%d</b></div><div class=card style="background:#d93025"><small>MATUMIZI TZS</small><b>%d</b></div><div class=card style="background:#1565c0"><small>Bakaa TZS %d</small></div></div><div class=box><h3>Wanachama <button onclick="document.getElementById('ad').style.display='block'" class=b style="padding:6px 12px;font-size:13px">+ Mpya</button></h3><div id=ad style="display:none"><form method=POST action=/add class=r><input name=jina placeholder="Jina" required class=full><button class=b>Hifadhi</button></form></div>`,mo,yo,mapato,matumizi,baki)
+for _,wm:=range list{fmt.Fprintf(w,`<div class=mem><span>%s</span><a href="/del?id=%d" style="background:#fce4ec;padding:4px 8px;border-radius:6px;text-decoration:none">X</a></div>`,html.EscapeString(wm.Jina),wm.ID)}
+fmt.Fprintf(w,`</div><div class=box><h3>Ingiza Data</h3><form method=POST action=/save><input type=hidden name=mwezi value=%d><input type=hidden name=mwaka value=%d><select name=wanachama_id class=full required><option value="">Chagua</option>%s</select><select name=hisa class=full><option>Hisa</option><option>Mapato</option><option>Matumizi</option><option>Mkopo</option><option>Marejesho</option></select><input name=klasi placeholder="Klasi" class=full required><input name=maelezo placeholder="Maelezo" class=full><input name=kiasi type=number placeholder="Kiasi" class=full required><select name=aina class=full><option value=mapato>Mapato</option><option value=matumizi>Matumizi</option></select><button class=big>Hifadhi</button></form></div>`,mNum,mw,mop)
+fmt.Fprint(w,`<div class=box><h3>Wanaorudisha Mikopo</h3><table class=t><tr><th>Jina</th><th>Kiasi</th><th>✏️ / X</th></tr>`)
+if db!=nil{
+rows,_:=db.Query("SELECT w.jina,m.kiasi,m.id FROM mikopo_rudisha m JOIN wanachama w ON w.id=m.wanachama_id LIMIT 20")
+if rows!=nil{
+has:=false
+for rows.Next(){has=true;var j string;var k int64;var id int;rows.Scan(&j,&k,&id);fmt.Fprintf(w,`<tr><td>%s</td><td>%s</td><td><a href="/delr?id=%d">X</a></td></tr>`,html.EscapeString(j),fmtN(k),id)}
+if!has{fmt.Fprint(w,`<tr><td colspan=3 style="color:#999">Hakuna</td></tr>`)}
+rows.Close()
+}else{fmt.Fprint(w,`<tr><td colspan=3 style="color:#999">Hakuna</td></tr>`)}
+}
+fmt.Fprint(w,`</table><form method=POST action=/rudisha class=r style="margin-top:8px"><select name=wanachama_id required><option value="">Chagua</option>`)
+for _,wm:=range list{fmt.Fprintf(w,`<option value=%d>%s</option>`,wm.ID,html.EscapeString(wm.Jina))}
+fmt.Fprint(w,`</select><input name=kiasi type=number placeholder="Kiasi" required><button class=b>Rudisha</button></form></div>`)
+fmt.Fprint(w,`<div class=box><h3>Wenye Deni la Mkopo</h3><table class=t><tr><th>Jina</th><th>Chukua</th><th>Rudisha</th><th>Baki</th><th>✏️</th></tr>`)
+if db!=nil{
+hasD:=false
+for _,wm:=range list{
+var ch,ru int64
+db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mikopo_chukua WHERE wanachama_id=$1",wm.ID).Scan(&ch)
+db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mikopo_rudisha WHERE wanachama_id=$1",wm.ID).Scan(&ru)
+if ch>0{hasD=true;fmt.Fprintf(w,`<tr><td>%s</td><td>%s</td><td>%s</td><td style="color:red;font-weight:700">%s</td><td>✏️</td></tr>`,html.EscapeString(wm.Jina),fmtN(ch),fmtN(ru),fmtN(ch-ru))}
+}
+if!hasD{fmt.Fprint(w,`<tr><td colspan=5 style="color:#999">Hakuna</td></tr>`)}
+}
+fmt.Fprint(w,`</table><form method=POST action=/chukua class=r style="margin-top:8px"><select name=wanachama_id required><option value="">Chagua</option>`)
+for _,wm:=range list{fmt.Fprintf(w,`<option value=%d>%s</option>`,wm.ID,html.EscapeString(wm.Jina))}
+fmt.Fprint(w,`</select><input name=kiasi type=number placeholder="Mkopo" required><button class=b>Weka</button></form></div>`)
+fmt.Fprint(w,`<div class=box><h3>Historia ya Mwezi Huu</h3>`)
+if db!=nil{
+rows,_:=db.Query("SELECT w.jina,m.klasi,m.kiasi FROM mahida m LEFT JOIN wanachama w ON w.id=m.wanachama_id WHERE m.mwezi=$1 AND m.mwaka=$2 ORDER BY m.id DESC LIMIT 30",mNum,mw)
+if rows!=nil{
+hasH:=false
+fmt.Fprint(w,`<table class=t><tr><th>Jina</th><th>Klasi</th><th>Kiasi</th></tr>`)
+for rows.Next(){hasH=true;var j,kl string;var k int64;rows.Scan(&j,&kl,&k);fmt.Fprintf(w,`<tr><td>%s</td><td>%s</td><td>%d</td></tr>`,html.EscapeString(j),html.EscapeString(kl),k)}
+fmt.Fprint(w,`</table>`)
+if!hasH{fmt.Fprint(w,`<div style="color:#999">Hakuna mwezi huu</div>`)}
+rows.Close()
+}else{fmt.Fprint(w,`<div style="color:#999">Hakuna mwezi huu</div>`)}
+}else{fmt.Fprint(w,`<div style="color:#999">Hakuna mwezi huu</div>`)}
+fmt.Fprint(w,`</div><div class=box><h3>Hifadhi ya Kudumu & Tuma</h3><a href="/"><button style="width:100%%;background:#ff6f00;color:#fff;padding:12px;border-radius:10px;border:0;font-weight:700;margin:6px 0">💾 Pakua Backup ya Kudumu (JSON)</button></a><button style="width:100%%;background:#1565c0;color:#fff;padding:12px;border-radius:10px;border:0;font-weight:700;margin:6px 0">📁 Rudisha Backup</button><button style="width:100%%;background:#757575;color:#fff;padding:12px;border-radius:10px;border:0;font-weight:700;margin:6px 0">📊 Pakua Excel CSV</button><button onclick="tuma()" style="width:100%%;background:#1a7a3b;color:#fff;padding:12px;border-radius:10px;border:0;font-weight:700;margin:6px 0">📄 Tuma WhatsApp Ripoti</button></div></div><script>function tuma(){var t="*Uwashusema* MAPATO:`+fmt.Sprintf("%d",mapato)+` MATUMIZI:`+fmt.Sprintf("%d",matumizi)+` BAKAA:`+fmt.Sprintf("%d",baki)+`";window.open("https://wa.me/?text="+encodeURIComponent(t),"_blank")}</script></body></html>`)
+}
+func addM(w http.ResponseWriter,r *http.Request){r.ParseForm();j:=r.FormValue("jina");if j!=""&&db!=nil{db.Exec("INSERT INTO wanachama(jina) VALUES ($1)",j)};http.Redirect(w,r,"/",302)}
+func delM(w http.ResponseWriter,r *http.Request){id:=r.URL.Query().Get("id");if db!=nil{db.Exec("DELETE FROM wanachama WHERE id=$1",id)};http.Redirect(w,r,"/",302)}
+func save(w http.ResponseWriter,r *http.Request){r.ParseForm();m,_:=strconv.Atoi(r.FormValue("mwezi"));y,_:=strconv.Atoi(r.FormValue("mwaka"));k,_:=strconv.ParseInt(r.FormValue("kiasi"),10,64);wid,_:=strconv.Atoi(r.FormValue("wanachama_id"));if db!=nil{db.Exec("INSERT INTO mahida(wanachama_id,mwezi,mwaka,hisa,klasi,maelezo,kiasi,aina) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",wid,m,y,r.FormValue("hisa"),r.FormValue("klasi"),r.FormValue("maelezo"),k,r.FormValue("aina"))};http.Redirect(w,r,"/",302)}
+func chukua(w http.ResponseWriter,r *http.Request){r.ParseForm();wid,_:=strconv.Atoi(r.FormValue("wanachama_id"));k,_:=strconv.ParseInt(r.FormValue("kiasi"),10,64);if db!=nil{db.Exec("INSERT INTO mikopo_chukua(wanachama_id,kiasi) VALUES ($1,$2)",wid,k)};http.Redirect(w,r,"/",302)}
+func rudisha(w http.ResponseWriter,r *http.Request){r.ParseForm();wid,_:=strconv.Atoi(r.FormValue("wanachama_id"));k,_:=strconv.ParseInt(r.FormValue("kiasi"),10,64);if db!=nil{db.Exec("INSERT INTO mikopo_rudisha(wanachama_id,kiasi) VALUES ($1,$2)",wid,k)};http.Redirect(w,r,"/",302)}
+func delr(w http.ResponseWriter,r *http.Request){id:=r.URL.Query().Get("id");if db!=nil{db.Exec("DELETE FROM mikopo_rudisha WHERE id=$1",id)};http.Redirect(w,r,"/",302)}
