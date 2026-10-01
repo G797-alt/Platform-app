@@ -1,4 +1,3 @@
-
 package main
 import ("database/sql"; "fmt"; "html"; "net/http"; "os"; "strconv"; _ "github.com/lib/pq")
 var db *sql.DB
