@@ -14,12 +14,12 @@ type Muamala struct{ ID int; Mwezi int; Mwaka int; Jina string; Aina string; Kia
 
 func main(){
  var err error
- db, err = sql.Open("pgx",os.("DATABASE_URL"))
+ db, err = db, err = sql.Open("pgx", os.Getenv("DATABASE_URL"))
  if err!=nil{fmt.Println("sqlite err",err)}
  db.Exec(`CREATE TABLE IF NOT EXISTS wanachama (id INTEGER PRIMARY KEY AUTOINCREMENT, jina TEXT UNIQUE NOT NULL)`)
  db.Exec(`CREATE TABLE IF NOT EXISTS miamala (id INTEGER PRIMARY KEY AUTOINCREMENT, mwezi INT, mwaka INT, jina TEXT, aina TEXT, kiasi BIGINT, maelezo TEXT)`)
- db.Exec(`INSERT OR IGNORE INTO wanachama(jina) VALUES('Charles Joseph Mgaya')`)
- fmt.Println("DB OK - SQLite mahida.db")
+db.Exec(`INSERT INTO wanachama(jina) VALUES('Test') ON CONFLICT DO NOTHING`)
+ fmt.Println("DB OK - Postgres")
  http.HandleFunc("/api/wanachama",handleWanachama)
  http.HandleFunc("/api/miamala",handleMiamala)
  http.HandleFunc("/api/summary",handleSummary)
