@@ -7,14 +7,14 @@ import (
  "net/http"
  "os"
  "strconv"
- _ "github.com/glebarez/go-sqlite"
+ _ "github.com/jackc/pgx/v5/stdlib"
 )
 var db *sql.DB
 type Muamala struct{ ID int; Mwezi int; Mwaka int; Jina string; Aina string; Kiasi int64; Maelezo string }
 
 func main(){
  var err error
- db, err = sql.Open("sqlite", "./mahida.db")
+ db, err = sql.Open("pgx",os.("DATABASE_URL"))
  if err!=nil{fmt.Println("sqlite err",err)}
  db.Exec(`CREATE TABLE IF NOT EXISTS wanachama (id INTEGER PRIMARY KEY AUTOINCREMENT, jina TEXT UNIQUE NOT NULL)`)
  db.Exec(`CREATE TABLE IF NOT EXISTS miamala (id INTEGER PRIMARY KEY AUTOINCREMENT, mwezi INT, mwaka INT, jina TEXT, aina TEXT, kiasi BIGINT, maelezo TEXT)`)
