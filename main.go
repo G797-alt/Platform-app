@@ -1,91 +1,151 @@
 package main
 import (
-"context";"database/sql";"fmt";"net/http";"os";"time"
+"context";"database/sql";"encoding/csv";"fmt";"net/http";"net/url";"os";"time"
 _ "github.com/jackc/pgx/v5/stdlib"
 )
 var db *sql.DB
 func init(){
- u:=os.Getenv("DATABASE_URL")
- if u==""{return}
+ u:=os.Getenv("DATABASE_URL"); if u==""{return}
  db,_=sql.Open("pgx",u)
  ctx,_:=context.WithTimeout(context.Background(),10*time.Second)
  db.PingContext(ctx)
  db.Exec(`CREATE TABLE IF NOT EXISTS wanachama(id SERIAL PRIMARY KEY,jina TEXT,simu TEXT,namba TEXT)`)
- db.Exec(`CREATE TABLE IF NOT EXISTS miamala(id SERIAL PRIMARY KEY,wanachama_id INT,jina TEXT,kiasi BIGINT,aina TEXT,tarehe TIMESTAMP DEFAULT NOW())`)
+ db.Exec(`CREATE TABLE IF NOT EXISTS miamala(id SERIAL PRIMARY KEY,jina TEXT,kiasi BIGINT,aina TEXT,tarehe TIMESTAMP DEFAULT NOW())`)
 }
 func main(){
  http.HandleFunc("/",home)
  http.HandleFunc("/ongeza",ongeza)
  http.HandleFunc("/mwanachama",mwanachama)
- http.HandleFunc("/wanachama",wanachamaList)
- http.HandleFunc("/history",history)
+ http.HandleFunc("/export",exportCSV)
  http.HandleFunc("/delete",del)
  p:=os.Getenv("PORT"); if p==""{p="10000"}
  http.ListenAndServe(":"+p,nil)
 }
+func getTotals() (mapato, dharura, matumizi, mikopo int64, br map[string]int64){
+ br=map[string]int64{"hisa_anzia":0,"ada_mwezi":0,"marejesho":0,"faini":0,"fedha_fomu":0,"michango_mingine":0}
+ if db==nil{return}
+ db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina IN ('hisa_anzia','ada_mwezi','marejesho','faini','fedha_fomu','michango_mingine')`).Scan(&mapato)
+ db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='fedha_dharura'`).Scan(&dharura)
+ db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='matumizi'`).Scan(&matumizi)
+ db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='mkopo'`).Scan(&mikopo)
+ for k := range br { db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina=$1`,k).Scan(&br[k]) }
+ return
+}
 func home(w http.ResponseWriter,r *http.Request){
+ mapato,dharura,matumizi,mikopo,br:=getTotals()
+ bakaa:=(mapato+dharura)-(matumizi+mikopo)
+ waText:=fmt.Sprintf("UWASHUSEMA RIPOTI\nBAKAA: TZS %d\nMAPATO: %d\n- Hisa Anzia:%d\n- Ada Mwezi:%d\n- Marejesho:%d\n- Faini:%d\n- Fomu:%d\n- Mengine:%d\nDHARURA: %d\nMATUMIZI: %d\nMIKOPO: %d\nhttps://platform-app-cj1v.onrender.com",bakaa,mapato,br["hisa_anzia"],br["ada_mwezi"],br["marejesho"],br["faini"],br["fedha_fomu"],br["michango_mingine"],dharura,matumizi,mikopo)
+ waLink:="https://wa.me/?text="+url.QueryEscape(waText)
  w.Header().Set("Content-Type","text/html; charset=utf-8")
- var mapato, dharura, matumizi, mikopo int64
- if db!=nil{
-  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina IN ('hisa_anzia','ada_mwezi','marejesho','faini','fedha_fomu','michango_mingine')`).Scan(&mapato)
-  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='fedha_dharura'`).Scan(&dharura)
-  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='matumizi'`).Scan(&matumizi)
-  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='mkopo'`).Scan(&mikopo)
- }
- bakaa := (mapato + dharura) - (matumizi + mikopo)
  fmt.Fprintf(w,`
-<!DOCTYPE html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema V3</title>
-<style>*{box-sizing:border-box}body{font-family:sans-serif;background:#eef2ee;margin:0;padding:10px}
-.card{background:#fff;padding:14px;border-radius:14px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.big{font-size:22px;font-weight:800}
-input,select,button{width:100%%;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #ccc}
-button{background:#0d7a3a;color:#fff;font-weight:700;border:0}
-.badge{display:inline-block;padding:4px 8px;border-radius:20px;background:#eee;font-size:11px;margin:2px}
-.bakaa{background:#0d7a3a;color:#fff}
+<!DOCTYPE html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema</title>
+<style>
+body{font-family:Inter,sans-serif;background:#f6f7f6;margin:0;padding:0 10px 80px}
+.header{padding:18px 6px 8px;font-weight:800;font-size:18px}
+.card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 4px 12px #0000000d}
+.bakaa{background:#0f7a3a;color:#fff;border-radius:20px;padding:18px}
+.bakaa.big{font-size:28px;font-weight:900;margin:4px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.small{font-size:11px;opacity:.8}
+.big2{font-size:18px;font-weight:800}
+.btn{width:100%%;padding:13px;border-radius:12px;border:0;font-weight:700;margin:6px 0}
+.btn-green{background:#0f7a3a;color:#fff}
+.btn-white{background:#fff;border:1px solid #ddd;color:#222}
+.btn-wa{background:#25D366;color:#fff}
+input,select{width:100%%;padding:13px;border-radius:12px;border:1px solid #ddd;margin:7px 0;background:#fafafa}
+.break{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px}
+.break div{background:#f3f5f3;padding:8px;border-radius:10px;font-size:11px}
+.break b{display:block;font-size:13px}
+.hist{max-height:420px;overflow:auto}
+table{width:100%%;border-collapse:collapse;font-size:12px}
+th{ text-align:left;padding:8px;background:#f6f6f6;position:sticky;top:0}
+td{padding:8px;border-bottom:1px solid #f0f0f0}
+.badge{padding:3px 7px;border-radius:20px;background:#eef2ee;font-size:10px}
 </style></head><body>
-<div class="card bakaa"><small>BAKAA - Pesa Iliyobaki Baada ya Kukopesha</small><div class="big">TZS %d</div><small>Mapato (%d) + Dharura (%d) - Matumizi (%d) - Mikopo (%d)</small></div>
-<div class="grid">
-<div class="card"><small>MAPATO (Jumla)</small><div class="big">%d</div><small>Hisa+Ada+Marejesho+Faini+Fomu+Michango</small></div>
-<div class="card"><small>FEDHA YA DHARURA</small><div class="big">%d</div></div>
-<div class="card"><small>MATUMIZI</small><div class="big" style="color:red">%d</div></div>
-<div class="card"><small>MIKOPO ILIYOTOLEWA</small><div class="big" style="color:#b45309">%d</div></div>
+<div class=header>Uwashusema - Platform</div>
+
+<div class="card bakaa">
+<div class=small>BAKAA - Pesa Iliyobaki Baada ya Kukopesha</div>
+<div class=big>TZS %d</div>
+<div class=small>Mapato (%d) + Dharura (%d) - Matumizi (%d) - Mikopo (%d)</div>
 </div>
 
-<div class="card"><h3>➕ Ongeza Muamala</h3>
+<div class=grid2>
+<div class=card><div class=small>MAPATO (Jumla)</div><div class=big2>%d</div><div class=small>Hisa+Ada+Marejesho+Faini+Fomu+Michango</div></div>
+<div class=card><div class=small>FEDHA YA DHARURA</div><div class=big2>%d</div><div class=small>Peke yake</div></div>
+<div class=card><div class=small>MATUMIZI</div><div class=big2 style="color:#d32f2f">%d</div></div>
+<div class=card><div class=small>MIKOPO ILIYOTOLEWA</div><div class=big2 style="color:#ef6c00">%d</div></div>
+</div>
+
+<div class=card>
+<div class=small>MUCHANGANUO WA MAPATO a-f</div>
+<div class=break>
+<div><b>%d</b>a) Hisa Anzia</div>
+<div><b>%d</b>b) Ada Mwezi</div>
+<div><b>%d</b>c) Marejesho</div>
+<div><b>%d</b>d) Faini</div>
+<div><b>%d</b>e) Fomu</div>
+<div><b>%d</b>f) Mengine</div>
+</div>
+</div>
+
+<div class=card>
+<a href=/export><button class="btn btn-white">📥 Pakua Excel (CSV) - Ripoti Kamili</button></a>
+<a href="%s" target=_blank><button class="btn btn-wa">💬 Tuma Ripoti WhatsApp</button></a>
+</div>
+
+<div class=card>
+<h3 style="margin:0 0 6px">+ Ongeza Muamala</h3>
 <form method=POST action=/ongeza>
 <input name=jina placeholder="Jina la Mwanachama" required>
 <input name=kiasi type=number placeholder="Kiasi TZS" required>
 <select name=aina required>
-<optgroup label="MAPATO">
+<option value="" disabled selected>Chagua Aina</option>
 <option value=hisa_anzia>a) Hisa Anzia</option>
 <option value=ada_mwezi>b) Ada ya Mwezi</option>
-<option value=marejesho>c) Marejesho (Rudisho la Mkopo)</option>
+<option value=marejesho>c) Marejesho</option>
 <option value=faini>d) Faini</option>
 <option value=fedha_fomu>e) Fedha ya Fomu</option>
 <option value=michango_mingine>f) Michango Mingine</option>
-</optgroup>
-<optgroup label="VINGINE">
-<option value=fedha_dharura>FEDHA YA DHARURA (Peke Yake)</option>
-<option value=matumizi>MATUMIZI (Peke Yake)</option>
-<option value=mkopo>MKOPO - Kukopesha (itaondoa kwenye Bakaa)</option>
-</optgroup>
+<option value=fedha_dharura>--- FEDHA YA DHARURA (Peke Yake) ---</option>
+<option value=matumizi>--- MATUMIZI (Peke Yake) ---</option>
+<option value=mkopo>--- MKOPO - Kukopesha ---</option>
 </select>
-<button>Ongeza</button>
-</form></div>
-
-<div class="card"><h3>👤 Mwanachama Mpya</h3>
-<form method=POST action=/mwanachama>
-<input name=jina placeholder="Jina Kamili" required><input name=simu placeholder="Simu"><input name=namba placeholder="Namba"><button>Sajili</button>
+<button class="btn btn-green">Ongeza</button>
 </form>
-<a href=/wanachama><button style="background:#eee;color:#333;margin-top:8px">👥 Orodha ya Wanachama</button></a>
-<a href=/history><button style="background:#eee;color:#333">📜 Historia Yote</button></a>
 </div>
-</body></html>
-`,bakaa,mapato,dharura,matumizi,mikopo,mapato,dharura,matumizi,mikopo)
+
+<div class=card>
+<h3 style="margin:0 0 6px">👤 Mwanachama Mpya</h3>
+<form method=POST action=/mwanachama>
+<input name=jina placeholder="Jina Kamili" required><input name=simu placeholder="Simu"><input name=namba placeholder="Namba MC001">
+<button class="btn btn-green">Sajili</button>
+</form>
+</div>
+
+<div class=card hist>
+<h3 style="margin:0 0 8px">📜 Historia (100 za mwisho)</h3>
+<table><tr><th>Tarehe</th><th>Jina</th><th>Aina</th><th>Kiasi</th><th></th></tr>
+`,bakaa,mapato,dharura,matumizi,mikopo,mapato,dharura,matumizi,mikopo,br["hisa_anzia"],br["ada_mwezi"],br["marejesho"],br["faini"],br["fedha_fomu"],br["michango_mingine"],waLink)
+ if db!=nil{
+  rows,_:=db.Query(`SELECT id,jina,kiasi,aina,TO_CHAR(tarehe,'DD/MM HH:MI') FROM miamala ORDER BY id DESC LIMIT 100`)
+  if rows!=nil{for rows.Next(){var id,k int64;var j,a,t string;rows.Scan(&id,&j,&k,&a,&t);fmt.Fprintf(w,`<tr><td>%s</td><td>%s</td><td><span class=badge>%s</span></td><td>%d</td><td><a href=/delete?id=%d style="color:red">X</a></td></tr>`,t,j,a,k,id)}}
+ }
+ fmt.Fprint(w,`</table></div></body></html>`)
 }
-func mwanachama(w http.ResponseWriter,r *http.Request){r.ParseForm();db.Exec("INSERT INTO wanachama(jina,simu,namba)VALUES($1,$2,$3)",r.FormValue("jina"),r.FormValue("simu"),r.FormValue("namba"));http.Redirect(w,r,"/",302)}
-func ongeza(w http.ResponseWriter,r *http.Request){r.ParseForm();db.Exec("INSERT INTO miamala(jina,kiasi,aina)VALUES($1,$2,$3)",r.FormValue("jina"),r.FormValue("kiasi"),r.FormValue("aina"));http.Redirect(w,r,"/",302)}
-func wanachamaList(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");fmt.Fprint(w,`<a href=/>⬅ Rudi</a><h2>Wanachama</h2><table border=1 width=100%><tr><th>Jina</th><th>Simu</th><th>Namba</th></tr>`);rows,_:=db.Query("SELECT jina,simu,namba FROM wanachama ORDER BY id DESC");for rows.Next(){var j,s,n sql.NullString;rows.Scan(&j,&s,&n);fmt.Fprintf(w,"<tr><td>%s</td><td>%s</td><td>%s</td></tr>",j.String,s.String,n.String)};fmt.Fprint(w,"</table>")}
-func history(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");fmt.Fprint(w,`<a href=/>⬅ Rudi</a><h2>Historia</h2><table border=1 width=100%><tr><th>Tarehe</th><th>Jina</th><th>Aina</th><th>Kiasi</th><th>Futa</th></tr>`);rows,_:=db.Query("SELECT id,jina,kiasi,aina,TO_CHAR(tarehe,'DD/MM HH:MI') FROM miamala ORDER BY id DESC LIMIT 200");for rows.Next(){var id,k int64;var j,a,t sql.NullString;rows.Scan(&id,&j,&k,&a,&t);fmt.Fprintf(w,"<tr><td>%s</td><td>%s</td><td><span class=badge>%s</span></td><td>%d</td><td><a href=/delete?id=%d>X</a></td></tr>",t.String,j.String,a.String,k,id)};fmt.Fprint(w,"</table>")}
-func del(w http.ResponseWriter,r *http.Request){db.Exec("DELETE FROM miamala WHERE id=$1",r.URL.Query().Get("id"));http.Redirect(w,r,"/history",302)}
+func mwanachama(w http.ResponseWriter,r *http.Request){r.ParseForm();if db!=nil{db.Exec("INSERT INTO wanachama(jina,simu,namba)VALUES($1,$2,$3)",r.FormValue("jina"),r.FormValue("simu"),r.FormValue("namba"))};http.Redirect(w,r,"/",302)}
+func ongeza(w http.ResponseWriter,r *http.Request){r.ParseForm();if db!=nil{db.Exec("INSERT INTO miamala(jina,kiasi,aina)VALUES($1,$2,$3)",r.FormValue("jina"),r.FormValue("kiasi"),r.FormValue("aina"))};http.Redirect(w,r,"/",302)}
+func del(w http.ResponseWriter,r *http.Request){if db!=nil{db.Exec("DELETE FROM miamala WHERE id=$1",r.URL.Query().Get("id"))};http.Redirect(w,r,"/",302)}
+func exportCSV(w http.ResponseWriter,r *http.Request){
+ w.Header().Set("Content-Type","text/csv")
+ w.Header().Set("Content-Disposition","attachment; filename=Uwashusema_Ripoti.csv")
+ writer:=csv.NewWriter(w)
+ writer.Write([]string{"Tarehe","Jina","Aina","Kiasi"})
+ if db!=nil{
+  rows,_:=db.Query(`SELECT TO_CHAR(tarehe,'YYYY-MM-DD HH:MI'),jina,aina,kiasi FROM miamala ORDER BY id DESC`)
+  if rows!=nil{for rows.Next(){var t,j,a string;var k int64;rows.Scan(&t,&j,&a,&k);writer.Write([]string{t,j,a,fmt.Sprintf("%d",k)})}}
+  mapato,dharura,matumizi,mikopo,_:=getTotals();bakaa:=(mapato+dharura)-(matumizi+mikopo)
+  writer.Write([]string{""});writer.Write([]string{"BAKAA",fmt.Sprintf("%d",bakaa)});writer.Write([]string{"MAPATO",fmt.Sprintf("%d",mapato)});writer.Write([]string{"DHARURA",fmt.Sprintf("%d",dharura)});writer.Write([]string{"MATUMIZI",fmt.Sprintf("%d",matumizi)});writer.Write([]string{"MIKOPO",fmt.Sprintf("%d",mikopo)})
+ }
+ writer.Flush()
+}
