@@ -1,201 +1,91 @@
 package main
 import (
-"database/sql"
-"encoding/csv"
-"encoding/json"
-"fmt"
-"html"
-"log"
-"net/http"
-"os"
-"strconv"
-"time"
-_ "github.com/lib/pq"
+"context";"database/sql";"fmt";"net/http";"os";"time"
+_ "github.com/jackc/pgx/v5/stdlib"
 )
 var db *sql.DB
+func init(){
+ u:=os.Getenv("DATABASE_URL")
+ if u==""{return}
+ db,_=sql.Open("pgx",u)
+ ctx,_:=context.WithTimeout(context.Background(),10*time.Second)
+ db.PingContext(ctx)
+ db.Exec(`CREATE TABLE IF NOT EXISTS wanachama(id SERIAL PRIMARY KEY,jina TEXT,simu TEXT,namba TEXT)`)
+ db.Exec(`CREATE TABLE IF NOT EXISTS miamala(id SERIAL PRIMARY KEY,wanachama_id INT,jina TEXT,kiasi BIGINT,aina TEXT,tarehe TIMESTAMP DEFAULT NOW())`)
+}
 func main(){
- var err error
- db, err = sql.Open("postgres", os.Getenv("DATABASE_URL"))
- if err!=nil{log.Fatal(err)}
- db.Ping()
- http.HandleFunc("/", home)
- http.HandleFunc("/save", save)
- http.HandleFunc("/save-mwanachama", saveMwanachama)
- http.HandleFunc("/edit", edit)
- http.HandleFunc("/del", del)
- http.HandleFunc("/backup", backup)
- http.HandleFunc("/csv", csvExport)
- http.HandleFunc("/restore", restore)
- p:=os.Getenv("PORT")
- if p==""{p="10000"}
- log.Println("CJ1V v2 JOIN FIX LIVE")
- http.ListenAndServe(":"+p, nil)
+ http.HandleFunc("/",home)
+ http.HandleFunc("/ongeza",ongeza)
+ http.HandleFunc("/mwanachama",mwanachama)
+ http.HandleFunc("/wanachama",wanachamaList)
+ http.HandleFunc("/history",history)
+ http.HandleFunc("/delete",del)
+ p:=os.Getenv("PORT"); if p==""{p="10000"}
+ http.ListenAndServe(":"+p,nil)
 }
-func fmtInt(n int64) string {
- if n==0{return "0"}
- s:=fmt.Sprintf("%d", n)
- out:=""
- c:=0
- for i:=len(s)-1;i>=0;i--{
-  out=string(s[i])+out
-  c++
-  if c%3==0 && i!=0{out=","+out}
- }
- return out
-}
-func home(w http.ResponseWriter, r *http.Request){
+func home(w http.ResponseWriter,r *http.Request){
  w.Header().Set("Content-Type","text/html; charset=utf-8")
- var mapato, matumizi int64
- db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mahida").Scan(&mapato)
- db.QueryRow("SELECT COALESCE(SUM(kiasi),0) FROM mahida WHERE aina ILIKE '%mkopo%' AND aina NOT ILIKE '%rejesho%'").Scan(&matumizi)
- baki:=mapato-matumizi
- q:=r.URL.Query().Get("q")
- opt:=""
- rows,_:=db.Query("SELECT id,jina FROM wanachama ORDER BY jina ASC")
- if rows!=nil{
-  for rows.Next(){
-   var id int
-   var j sql.NullString
-   rows.Scan(&id,&j)
-   jv:=""
-   if j.Valid{jv=j.String}
-   opt+=fmt.Sprintf("<option value='%d|%s'>%s</option>", id, html.EscapeString(jv), html.EscapeString(jv))
-  }
-  rows.Close()
+ var mapato, dharura, matumizi, mikopo int64
+ if db!=nil{
+  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina IN ('hisa_anzia','ada_mwezi','marejesho','faini','fedha_fomu','michango_mingine')`).Scan(&mapato)
+  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='fedha_dharura'`).Scan(&dharura)
+  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='matumizi'`).Scan(&matumizi)
+  db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='mkopo'`).Scan(&mikopo)
  }
- if opt==""{opt="<option value='0|Haijulikani'>Haijulikani</option>"}
- hist:=""
- var r2 *sql.Rows
- var err error
- base := "SELECT m.id, COALESCE(w.jina,'Haijulikani') as jina, m.aina, m.kiasi FROM mahida m LEFT JOIN wanachama w ON w.id = m.mwanachama_id "
- if q!=""{
-  r2,err=db.Query(base+" WHERE w.jina ILIKE $1 OR m.aina ILIKE $1 ORDER BY m.id DESC LIMIT 300", "%"+q+"%")
- }else{
-  r2,err=db.Query(base+" ORDER BY m.id DESC LIMIT 300")
- }
- if err!=nil{
-  hist=fmt.Sprintf("<tr><td colspan=6 style='color:red'>DB ERROR JOIN: %s</td></tr>", html.EscapeString(err.Error()))
- }else if r2!=nil{
-  cnt:=0
-  for r2.Next(){
-   var id sql.NullInt64
-   var j,a sql.NullString
-   var k sql.NullInt64
-   if err:=r2.Scan(&id,&j,&a,&k); err!=nil{log.Println(err); continue}
-   cnt++
-   idv:="0"; if id.Valid{idv=strconv.FormatInt(id.Int64,10)}
-   jv:=""; if j.Valid{jv=j.String}
-   av:=""; if a.Valid{av=a.String}
-   kv:=int64(0); if k.Valid{kv=k.Int64}
-   hist+=fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><button onclick=\"editD(%s,%d)\">Edit</button></td><td><a href='/del?id=%s'>Del</a></td></tr>", idv, html.EscapeString(jv), html.EscapeString(av), fmtInt(kv), idv, kv, idv)
-  }
-  r2.Close()
-  if cnt==0{
-   hist=fmt.Sprintf("<tr><td colspan=6 style='text-align:center;padding:20px'>Hakuna data (search=%s) - MAPATO %s bado ipo.</td></tr>", html.EscapeString(q), fmtInt(mapato))
-  }
- }
- totals:=""
- rt,_:=db.Query("SELECT COALESCE(aina,'Hakuna Aina'), SUM(kiasi) FROM mahida GROUP BY aina ORDER BY SUM(kiasi) DESC")
- if rt!=nil{
-  for rt.Next(){
-   var a sql.NullString
-   var s sql.NullInt64
-   rt.Scan(&a,&s)
-   av:=""; if a.Valid{av=a.String}
-   if av==""{av="Aina Tupu"}
-   sv:=int64(0); if s.Valid{sv=s.Int64}
-   totals+=fmt.Sprintf("<span style='background:#e8f5e9;padding:6px 10px;border-radius:20px;margin:3px;display:inline-block;font-size:12px'>%s: %s</span>", html.EscapeString(av), fmtInt(sv))
-  }
-  rt.Close()
- }
- fmt.Fprint(w, "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CJ1V v2 JOIN FIX</title>")
- fmt.Fprint(w, "<style>body{font-family:sans-serif;background:#f0f4f0;margin:0;padding:8px}.top{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}.card{padding:14px;border-radius:16px;color:#fff;text-align:center;font-weight:bold}.g{background:#2e7d32}.r{background:#c62828}.b{background:#1565c0}.box{background:#fff;border-radius:12px;padding:12px;margin-bottom:10px}input,select{padding:11px;border:1px solid #ccc;border-radius:8px;margin:2px}.btn{padding:12px;border:none;border-radius:10px;color:#fff;font-weight:bold;width:100%;margin-top:6px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#e8f5e9;padding:8px}td{padding:8px;border-bottom:1px solid #eee}</style></head><body>")
- fmt.Fprintf(w, "<div class='top'><div class='card g'>MAPATO<br>TZS %s</div><div class='card r'>MATUMIZI<br>TZS %s</div><div class='card b'>BAKAA<br>TZS %s</div></div>", fmtInt(mapato), fmtInt(matumizi), fmtInt(baki))
- fmt.Fprintf(w, "<div class='box'><div style='display:flex;flex-wrap:wrap'>%s</div></div>", totals)
- fmt.Fprintf(w, "<div class='box'><h3>➕ Ongeza Muamala</h3><form action='/save' method='POST' style='display:flex;flex-wrap:wrap;gap:4px'><select name='mid' required style='flex:1'>%s</select><select name='aina'><option>Hisa</option><option>Ada</option><option>Faini</option><option>Fomu</option><option>Mkopo</option><option>Marejesho</option><option>Riba</option></select><input name='kiasi' type='number' placeholder='Kiasi' required style='width:120px'><button class='btn' style='background:#2e7d32;width:auto'>SAVE</button></form><form action='/save-mwanachama' method='POST' style='margin-top:8px;display:flex;gap:4px'><input name='jina' placeholder='Mwanachama mpya' required style='flex:1'><button style='background:#1565c0;color:#fff;border:none;border-radius:8px;padding:10px'>+ Mwanachama</button></form></div>", opt)
- fmt.Fprintf(w, "<div class='box'><form method='GET' style='display:flex;gap:4px'><input name='q' value='%s' placeholder='Search jina / aina...' style='flex:1'><button style='background:#616161;color:#fff;border:none;border-radius:8px;padding:10px'>Search</button></form></div>", html.EscapeString(q))
- fmt.Fprintf(w, "<div class='box'><h3>Historia LIVE (%s TZS) - JOIN FIX</h3><table><tr><th>ID</th><th>Jina</th><th>Aina</th><th>Kiasi</th><th>Edit</th><th>Del</th></tr>%s</table></div>", fmtInt(mapato), hist)
- fmt.Fprint(w, "<div class='box'><h3>Backup</h3><a href='/backup'><button class='btn' style='background:#ef6c00'>Pakua JSON</button></a><a href='/csv'><button class='btn' style='background:#616161'>Pakua CSV</button></a></div>")
- fmt.Fprint(w, "<script>function editD(id,oldK){var k=prompt('Edit kiasi ID '+id, oldK); if(k) fetch('/edit?id='+id+'&k='+k,{method:'POST'}).then(()=>location.reload());}</script></body></html>")
+ bakaa := (mapato + dharura) - (matumizi + mikopo)
+ fmt.Fprintf(w,`
+<!DOCTYPE html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema V3</title>
+<style>*{box-sizing:border-box}body{font-family:sans-serif;background:#eef2ee;margin:0;padding:10px}
+.card{background:#fff;padding:14px;border-radius:14px;margin-bottom:12px;box-shadow:0 2px 8px #0001}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.big{font-size:22px;font-weight:800}
+input,select,button{width:100%%;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #ccc}
+button{background:#0d7a3a;color:#fff;font-weight:700;border:0}
+.badge{display:inline-block;padding:4px 8px;border-radius:20px;background:#eee;font-size:11px;margin:2px}
+.bakaa{background:#0d7a3a;color:#fff}
+</style></head><body>
+<div class="card bakaa"><small>BAKAA - Pesa Iliyobaki Baada ya Kukopesha</small><div class="big">TZS %d</div><small>Mapato (%d) + Dharura (%d) - Matumizi (%d) - Mikopo (%d)</small></div>
+<div class="grid">
+<div class="card"><small>MAPATO (Jumla)</small><div class="big">%d</div><small>Hisa+Ada+Marejesho+Faini+Fomu+Michango</small></div>
+<div class="card"><small>FEDHA YA DHARURA</small><div class="big">%d</div></div>
+<div class="card"><small>MATUMIZI</small><div class="big" style="color:red">%d</div></div>
+<div class="card"><small>MIKOPO ILIYOTOLEWA</small><div class="big" style="color:#b45309">%d</div></div>
+</div>
+
+<div class="card"><h3>➕ Ongeza Muamala</h3>
+<form method=POST action=/ongeza>
+<input name=jina placeholder="Jina la Mwanachama" required>
+<input name=kiasi type=number placeholder="Kiasi TZS" required>
+<select name=aina required>
+<optgroup label="MAPATO">
+<option value=hisa_anzia>a) Hisa Anzia</option>
+<option value=ada_mwezi>b) Ada ya Mwezi</option>
+<option value=marejesho>c) Marejesho (Rudisho la Mkopo)</option>
+<option value=faini>d) Faini</option>
+<option value=fedha_fomu>e) Fedha ya Fomu</option>
+<option value=michango_mingine>f) Michango Mingine</option>
+</optgroup>
+<optgroup label="VINGINE">
+<option value=fedha_dharura>FEDHA YA DHARURA (Peke Yake)</option>
+<option value=matumizi>MATUMIZI (Peke Yake)</option>
+<option value=mkopo>MKOPO - Kukopesha (itaondoa kwenye Bakaa)</option>
+</optgroup>
+</select>
+<button>Ongeza</button>
+</form></div>
+
+<div class="card"><h3>👤 Mwanachama Mpya</h3>
+<form method=POST action=/mwanachama>
+<input name=jina placeholder="Jina Kamili" required><input name=simu placeholder="Simu"><input name=namba placeholder="Namba"><button>Sajili</button>
+</form>
+<a href=/wanachama><button style="background:#eee;color:#333;margin-top:8px">👥 Orodha ya Wanachama</button></a>
+<a href=/history><button style="background:#eee;color:#333">📜 Historia Yote</button></a>
+</div>
+</body></html>
+`,bakaa,mapato,dharura,matumizi,mikopo,mapato,dharura,matumizi,mikopo)
 }
-func save(w http.ResponseWriter, r *http.Request){
- r.ParseForm()
- midFull:=r.FormValue("mid")
- k,_:=strconv.ParseInt(r.FormValue("kiasi"),10,64)
- aina:=r.FormValue("aina")
- id:=0
- for i,c:=range midFull{if c=='|' {id,_=strconv.Atoi(midFull[:i]); break}}
- _, err := db.Exec("INSERT INTO mahida(mwanachama_id,kiasi,aina,mwezi,mwaka) VALUES($1,$2,$3,$4,$5)", id, k, aina, int(time.Now().Month()), time.Now().Year())
- if err!=nil{
-  jina:=midFull
-  for i,c:=range midFull{if c=='|' {jina=midFull[i+1:]; break}}
-  db.Exec("INSERT INTO mahida(mwanachama_id,jina,kiasi,aina,mwezi,mwaka) VALUES($1,$2,$3,$4,$5,$6)", id, jina, k, aina, int(time.Now().Month()), time.Now().Year())
- }
- http.Redirect(w,r,"/",302)
-}
-func saveMwanachama(w http.ResponseWriter, r *http.Request){
- r.ParseForm()
- j:=r.FormValue("jina")
- if j!=""{db.Exec("INSERT INTO wanachama(jina) VALUES($1) ON CONFLICT (jina) DO NOTHING", j)}
- http.Redirect(w,r,"/",302)
-}
-func edit(w http.ResponseWriter, r *http.Request){
- id:=r.URL.Query().Get("id")
- k:=r.URL.Query().Get("k")
- kv,_:=strconv.ParseInt(k,10,64)
- db.Exec("UPDATE mahida SET kiasi=$1 WHERE id=$2", kv, id)
- w.Write([]byte("ok"))
-}
-func del(w http.ResponseWriter, r *http.Request){
- id:=r.URL.Query().Get("id")
- db.Exec("DELETE FROM mahida WHERE id=$1", id)
- http.Redirect(w,r,"/",302)
-}
-func backup(w http.ResponseWriter, r *http.Request){
- rows,_:=db.Query("SELECT m.id,m.mwanachama_id,COALESCE(w.jina,''),m.aina,m.kiasi,m.mwezi,m.mwaka FROM mahida m LEFT JOIN wanachama w ON w.id=m.mwanachama_id ORDER BY m.id")
- var arr []map[string]interface{}
- if rows!=nil{
-  for rows.Next(){
-   var id,mid,mw,yr sql.NullInt64
-   var j,a sql.NullString
-   var k sql.NullInt64
-   rows.Scan(&id,&mid,&j,&a,&k,&mw,&yr)
-   arr=append(arr, map[string]interface{}{"id":id.Int64,"mid":mid.Int64,"jina":j.String,"aina":a.String,"kiasi":k.Int64,"mwezi":mw.Int64,"mwaka":yr.Int64})
-  }
-  rows.Close()
- }
- w.Header().Set("Content-Disposition","attachment; filename=cj1v-backup.json")
- json.NewEncoder(w).Encode(arr)
-}
-func csvExport(w http.ResponseWriter, r *http.Request){
- w.Header().Set("Content-Disposition","attachment; filename=cj1v.csv")
- w.Header().Set("Content-Type","text/csv")
- cw:=csv.NewWriter(w)
- cw.Write([]string{"ID","Jina","Aina","Kiasi"})
- rows,_:=db.Query("SELECT m.id, COALESCE(w.jina,''), m.aina, m.kiasi FROM mahida m LEFT JOIN wanachama w ON w.id=m.mwanachama_id ORDER BY m.id DESC")
- if rows!=nil{
-  for rows.Next(){
-   var id sql.NullInt64
-   var j,a sql.NullString
-   var k sql.NullInt64
-   rows.Scan(&id,&j,&a,&k)
-   cw.Write([]string{strconv.FormatInt(id.Int64,10), j.String, a.String, strconv.FormatInt(k.Int64,10)})
-  }
-  rows.Close()
- }
- cw.Flush()
-}
-func restore(w http.ResponseWriter, r *http.Request){
- r.ParseMultipartForm(10<<20)
- f,_,_:=r.FormFile("file")
- if f==nil{http.Redirect(w,r,"/",302); return}
- var arr []map[string]interface{}
- json.NewDecoder(f).Decode(&arr)
- for _,x:=range arr{
-  aina:=""; if v,ok:=x["aina"].(string); ok{aina=v}
-  kiasi:=int64(0); if v,ok:=x["kiasi"].(float64); ok{kiasi=int64(v)}
-  mid:=0; if v,ok:=x["mid"].(float64); ok{mid=int(v)}
-  db.Exec("INSERT INTO mahida(mwanachama_id,kiasi,aina,mwezi,mwaka) VALUES($1,$2,$3,$4,$5)", mid, kiasi, aina, int(time.Now().Month()), time.Now().Year())
- }
- http.Redirect(w,r,"/",302)
-}
+func mwanachama(w http.ResponseWriter,r *http.Request){r.ParseForm();db.Exec("INSERT INTO wanachama(jina,simu,namba)VALUES($1,$2,$3)",r.FormValue("jina"),r.FormValue("simu"),r.FormValue("namba"));http.Redirect(w,r,"/",302)}
+func ongeza(w http.ResponseWriter,r *http.Request){r.ParseForm();db.Exec("INSERT INTO miamala(jina,kiasi,aina)VALUES($1,$2,$3)",r.FormValue("jina"),r.FormValue("kiasi"),r.FormValue("aina"));http.Redirect(w,r,"/",302)}
+func wanachamaList(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");fmt.Fprint(w,`<a href=/>⬅ Rudi</a><h2>Wanachama</h2><table border=1 width=100%><tr><th>Jina</th><th>Simu</th><th>Namba</th></tr>`);rows,_:=db.Query("SELECT jina,simu,namba FROM wanachama ORDER BY id DESC");for rows.Next(){var j,s,n sql.NullString;rows.Scan(&j,&s,&n);fmt.Fprintf(w,"<tr><td>%s</td><td>%s</td><td>%s</td></tr>",j.String,s.String,n.String)};fmt.Fprint(w,"</table>")}
+func history(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","text/html; charset=utf-8");fmt.Fprint(w,`<a href=/>⬅ Rudi</a><h2>Historia</h2><table border=1 width=100%><tr><th>Tarehe</th><th>Jina</th><th>Aina</th><th>Kiasi</th><th>Futa</th></tr>`);rows,_:=db.Query("SELECT id,jina,kiasi,aina,TO_CHAR(tarehe,'DD/MM HH:MI') FROM miamala ORDER BY id DESC LIMIT 200");for rows.Next(){var id,k int64;var j,a,t sql.NullString;rows.Scan(&id,&j,&k,&a,&t);fmt.Fprintf(w,"<tr><td>%s</td><td>%s</td><td><span class=badge>%s</span></td><td>%d</td><td><a href=/delete?id=%d>X</a></td></tr>",t.String,j.String,a.String,k,id)};fmt.Fprint(w,"</table>")}
+func del(w http.ResponseWriter,r *http.Request){db.Exec("DELETE FROM miamala WHERE id=$1",r.URL.Query().Get("id"));http.Redirect(w,r,"/history",302)}
