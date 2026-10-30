@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -112,4 +113,115 @@ table{width:100%%;border-collapse:collapse;font-size:12px}th{text-align:left;pad
 			for rows.Next() {
 				var j, s string
 				var k, b int64
-				rows.Scan(&j, &k, &b
+				rows.Scan(&j, &k, &b, &s)
+				c := "green"
+				if b > 0 {
+					c = "red"
+				}
+				fmt.Fprintf(w, `<tr><td>%s</td><td>%d</td><td style="color:%s;font-weight:800">%d</td><td>%s</td></tr>`, j, k, c, b, s)
+			}
+			rows.Close()
+		}
+		fmt.Fprint(w, `</table></div>`)
+
+		fmt.Fprint(w, `<div class=card><h3>Miamala 20 ya Mwisho</h3><table><tr><th>Jina</th><th>Aina</th><th>Kiasi</th></tr>`)
+		rows2, _ := db.Query(`SELECT jina,aina,kiasi FROM miamala ORDER BY id DESC LIMIT 20`)
+		if rows2 != nil {
+			for rows2.Next() {
+				var j, a string
+				var k int64
+				rows2.Scan(&j, &a, &k)
+				fmt.Fprintf(w, `<tr><td>%s</td><td>%s</td><td>%d</td></tr>`, j, a, k)
+			}
+			rows2.Close()
+		}
+		fmt.Fprint(w, `</table></div>`)
+	}
+	fmt.Fprint(w, `</body></html>`)
+}
+
+func ongeza(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	jinaOrig := r.FormValue("jina")
+	jina := jinaOrig
+	aina := r.FormValue("aina")
+	kiasiStr := r.FormValue("kiasi")
+	var kiasi int64
+	fmt.Sscan(kiasiStr, &kiasi)
+	if aina == "fedha_dharura" || aina == "matumizi" {
+		jina = "Washusema Nzima"
+	}
+	if db != nil {
+		db.Exec("INSERT INTO miamala(jina,kiasi,aina)VALUES($1,$2,$3)", jina, kiasi, aina)
+		if aina == "mkopo" {
+			db.Exec("INSERT INTO mikopo(jina,kiasi,baki)VALUES($1,$2,$2)", jinaOrig, kiasi)
+		}
+		if aina == "marejesho" {
+			db.Exec("UPDATE mikopo SET baki = baki - $1 WHERE id = (SELECT id FROM mikopo WHERE jina=$2 AND baki>0 ORDER BY id DESC LIMIT 1)", kiasi, jinaOrig)
+			db.Exec("UPDATE mikopo SET status='imelipwa' WHERE baki<=0")
+			db.Exec("INSERT INTO marejesho_mikopo(jina,kiasi)VALUES($1,$2)", jinaOrig, kiasi)
+		}
+	}
+	http.Redirect(w, r, "/?added=1", 302)
+}
+
+func mwanachama(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	if db != nil {
+		db.Exec("INSERT INTO wanachama(jina,simu,namba)VALUES($1,$2,$3)", r.FormValue("jina"), r.FormValue("simu"), r.FormValue("namba"))
+	}
+	http.Redirect(w, r, "/", 302)
+}
+func del(w http.ResponseWriter, r *http.Request) {
+	if db != nil {
+		db.Exec("DELETE FROM miamala WHERE id=$1", r.URL.Query().Get("id"))
+	}
+	http.Redirect(w, r, "/", 302)
+}
+
+// HAPA NDIPO NILIPOFIX - EXCEL SASA INASOMA
+func exportCSV(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=Miamala_Yote.csv")
+	writer := csv.NewWriter(w)
+	writer.Write([]string{"Tarehe", "Jina", "Aina", "Kiasi"})
+	if db != nil {
+		rows, err := db.Query(`SELECT tarehe, jina, aina, kiasi FROM miamala ORDER BY id DESC`)
+		if err == nil && rows != nil {
+			for rows.Next() {
+				var t time.Time
+				var j, a string
+				var k int64
+				rows.Scan(&t, &j, &a, &k)
+				writer.Write([]string{t.Format("2006-01-02 15:04:05"), j, a, fmt.Sprintf("%d", k)})
+			}
+			rows.Close()
+		}
+	}
+	writer.Flush()
+}
+
+func exportMikopo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=Mikopo_Inayopungua.csv")
+	writer := csv.NewWriter(w)
+	writer.Write([]string{"Jina", "Mkopo Aliouchukua", "Jumla Marejesho", "Baki Anayodaiwa", "Tarehe", "Status"})
+	if db != nil {
+		rows, err := db.Query(`SELECT jina, kiasi, baki, tarehe, status FROM mikopo ORDER BY id DESC`)
+		if err == nil && rows != nil {
+			for rows.Next() {
+				var j, s string
+				var k, b int64
+				var t time.Time
+				rows.Scan(&j, &k, &b, &t, &s)
+				marejesho := k - b
+				if marejesho < 0 {
+					marejesho = 0
+				}
+				writer.Write([]string{j, fmt.Sprintf("%d", k), fmt.Sprintf("%d", marejesho), fmt.Sprintf("%d", b), t.Format("2006-01-02"), s})
+			}
+			rows.Close()
+		}
+	}
+	writer.Flush()
+}
