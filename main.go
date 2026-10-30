@@ -57,186 +57,59 @@ func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	mapato, dharura, matumizi, mikopo := getTotals()
 	bakaa := (mapato + dharura) - (matumizi + mikopo)
-	waText := fmt.Sprintf("UWASHUSEMA MAHIDA RIPOTI\nBAKAA: TZS %d\nMAPATO: %d\nDHARURA: %d\nMATUMIZI: %d\nMIKOPO: %d", bakaa, mapato, dharura, matumizi, mikopo)
+	waText := fmt.Sprintf("UWASHUSEMA MAHIDA RIPOTI\nBAKAA: TZS %d", bakaa)
 	waLink := "https://wa.me/?text=" + url.QueryEscape(waText)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `
 <!DOCTYPE html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema Mahida</title>
 <style>
-body{font-family:sans-serif;background:#f6f7f6;margin:0;padding:0 10px 80px}
-.header{padding:18px 6px 8px;font-weight:800;font-size:20px}
+body{font-family:sans-serif;background:#f6f7f6;margin:0;padding:10px 10px 80px}
 .card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 4px 12px #0000000d}
 .bakaa{background:#0f7a3a;color:#fff;border-radius:20px;padding:18px}
-.big{font-size:28px;font-weight:900}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.big{font-size:28px;font-weight:900}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .small{font-size:11px;opacity:.8}.big2{font-size:18px;font-weight:800}
 .btn{width:100%%;padding:13px;border-radius:12px;border:0;font-weight:700;margin:6px 0}
 .btn-green{background:#0f7a3a;color:#fff}.btn-white{background:#fff;border:1px solid #ddd}.btn-wa{background:#25D366;color:#fff}
 input,select{width:100%%;padding:13px;border-radius:12px;border:1px solid #ddd;margin:7px 0;background:#fafafa}
 table{width:100%%;border-collapse:collapse;font-size:12px}th{text-align:left;padding:8px;background:#f6f6f6}td{padding:8px;border-bottom:1px solid #f0f0f0}
 .badge{padding:3px 7px;border-radius:20px;background:#eef2ee;font-size:10px}
-.note{font-size:11px;background:#fff8e1;padding:8px;border-radius:8px;margin-top:6px;border-left:4px solid #ffb300}
-</style>
-<script>
-function checkAina(){
-  var a=document.getElementById('aina').value;
-  var j=document.getElementById('jina');
-  var n=document.getElementById('note');
-  if(a=='fedha_dharura' || a=='matumizi' || a=='mkopo'){
-    j.value='Washusema Nzima';
-    j.readOnly=true;
-    n.style.display='block';
-    n.innerHTML='ℹ️ Hii ni ya Washusema Nzima (kikundi), sio ya mwanachama mmoja.';
-  } else {
-    j.readOnly=false;
-    if(j.value=='Washusema Nzima') j.value='';
-    n.style.display='none';
-  }
-}
-</script>
-</head><body>
-<div class=header>Uwashusema Mahida</div>
-<div class="card bakaa"><div class=small>BAKAA - Pesa Iliyobaki Baada ya Kukopesha</div><div class=big>TZS %d</div><div class=small>Mapato (%d) + Dharura (%d) - Matumizi (%d) - Mikopo (%d)</div></div>
+</style></head><body>
+<div class="card bakaa"><div class=small>BAKAA</div><div class=big>TZS %d</div><div class=small>Mapato %d + Dharura %d - Matumizi %d - Mikopo %d</div></div>
 <div class=grid2>
-<div class=card><div class=small>MAPATO (Jumla)</div><div class=big2>%d</div><div class=small>Ya wanachama</div></div>
-<div class=card><div class=small>FEDHA YA DHARURA</div><div class=big2>%d</div><div class=small>Ya kikundi</div></div>
-<div class=card><div class=small>MATUMIZI</div><div class=big2 style="color:#d32f2f">%d</div><div class=small>Ya kikundi</div></div>
-<div class=card><div class=small>MIKOPO ILIYOTOLEWA</div><div class=big2 style="color:#ef6c00">%d</div><div class=small>Ya kikundi</div></div>
+<div class=card><div class=small>MAPATO</div><div class=big2>%d</div></div>
+<div class=card><div class=small>DHARURA</div><div class=big2>%d</div></div>
+<div class=card><div class=small>MATUMIZI</div><div class=big2 style="color:red">%d</div></div>
+<div class=card><div class=small>MIKOPO</div><div class=big2 style="color:orange">%d</div></div>
 </div>
 <div class=card>
-<a href=/export><button class="btn btn-white">📥 Pakua Excel ya Miamala Yote</button></a>
-<a href=/export-mikopo><button class="btn btn-green">📊 Pakua Excel ya Mikopo (Inayopungua)</button></a>
-<a href="%s" target=_blank><button class="btn btn-wa">💬 Tuma Ripoti WhatsApp</button></a>
+<a href=/export><button class="btn btn-white">📥 Pakua Excel ya Miamala Yote (Inasoma Sasa)</button></a>
+<a href=/export-mikopo><button class="btn btn-green">📊 Pakua Excel ya Mikopo Inayopungua</button></a>
+<a href="%s"><button class="btn btn-wa">WhatsApp</button></a>
 </div>
 <div class=card><h3>+ Ongeza Muamala</h3>
 <form method=POST action=/ongeza>
-<input id=jina name=jina placeholder="Jina la Mwanachama" required>
+<input name=jina placeholder="Jina la Mwanachama" required>
 <input name=kiasi type=number placeholder="Kiasi TZS" required>
-<select id=aina name=aina required onchange=checkAina()>
+<select name=aina required>
 <option value="" disabled selected>Chagua Aina</option>
 <option value=hisa_anzia>Hisa Anzia</option>
 <option value=ada_mwezi>Ada ya Mwezi</option>
-<option value=marejesho>Marejesho ya Mkopo</option>
+<option value=marejesho>Marejesho ya Mkopo - Itapunguza Deni</option>
 <option value=faini>Faini</option>
 <option value=fedha_fomu>Fedha ya Fomu</option>
 <option value=michango_mingine>Michango Mingine</option>
-<option value=fedha_dharura>--- FEDHA YA DHARURA (Ya Kikundi) ---</option>
-<option value=matumizi>--- MATUMIZI (Ya Kikundi) ---</option>
-<option value=mkopo>--- MKOPO ILIYOTOLEWA (Kwa Mwanachama) ---</option>
+<option value=fedha_dharura>Fedha ya Dharura (Kikundi)</option>
+<option value=matumizi>Matumizi (Kikundi)</option>
+<option value=mkopo>Mkopo Aliyochukua (Mwanachama)</option>
 </select>
-<div id=note class=note style="display:none"></div>
-<button class="btn btn-green">Ongeza Sasa</button>
-</form></div>
-<div class="card"><h3>📜 Historia ya Mikopo Inayopungua</h3><table><tr><th>Jina</th><th>Aliokopa</th><th>Baki</th><th>Status</th></tr>
+<button class="btn btn-green">Ongeza</button></form></div>
 `, bakaa, mapato, dharura, matumizi, mikopo, mapato, dharura, matumizi, mikopo, waLink)
+
 	if db != nil {
-		rows, _ := db.Query(`SELECT jina,kiasi,baki,status FROM mikopo ORDER BY id DESC LIMIT 50`)
+		fmt.Fprint(w, `<div class=card><h3>Mikopo - Baki Inayopungua Live</h3><table><tr><th>Jina</th><th>Kiasi</th><th>Baki</th><th>Status</th></tr>`)
+		rows, _ := db.Query(`SELECT jina,kiasi,baki,status FROM mikopo ORDER BY id DESC LIMIT 100`)
 		if rows != nil {
 			for rows.Next() {
 				var j, s string
 				var k, b int64
-				rows.Scan(&j, &k, &b, &s)
-				color := "green"
-				if b > 0 {
-					color = "red"
-				}
-				fmt.Fprintf(w, `<tr><td>%s</td><td>%d</td><td style="color:%s;font-weight:800">%d</td><td><span class=badge>%s</span></td></tr>`, j, k, color, b, s)
-			}
-		}
-	}
-	fmt.Fprint(w, `</table></div></body></html>`)
-}
-
-func mwanachama(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	if db != nil {
-		db.Exec("INSERT INTO wanachama(jina,simu,namba)VALUES($1,$2,$3)", r.FormValue("jina"), r.FormValue("simu"), r.FormValue("namba"))
-	}
-	http.Redirect(w, r, "/?ok=1", 302)
-}
-
-func ongeza(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	jinaOrig := r.FormValue("jina")
-	jina := jinaOrig
-	aina := r.FormValue("aina")
-	kiasiStr := r.FormValue("kiasi")
-	var kiasi int64
-	fmt.Sscan(kiasiStr, &kiasi)
-
-	if aina == "fedha_dharura" || aina == "matumizi" {
-		jina = "Washusema Nzima"
-	}
-	if db != nil {
-		db.Exec("INSERT INTO miamala(jina,kiasi,aina)VALUES($1,$2,$3)", jina, kiasiStr, aina)
-		if aina == "mkopo" {
-			db.Exec("INSERT INTO mikopo(jina,kiasi,baki,status)VALUES($1,$2,$2,'ipo')", jinaOrig, kiasi)
-		}
-		if aina == "marejesho" {
-			db.Exec("UPDATE mikopo SET baki = baki - $1 WHERE id = (SELECT id FROM mikopo WHERE jina=$2 AND baki>0 ORDER BY id DESC LIMIT 1)", kiasi, jinaOrig)
-			db.Exec("UPDATE mikopo SET status='imelipwa' WHERE baki<=0")
-			db.Exec("INSERT INTO marejesho_mikopo(jina,kiasi)VALUES($1,$2)", jinaOrig, kiasi)
-		}
-	}
-	http.Redirect(w, r, "/?added=1", 302)
-}
-
-func del(w http.ResponseWriter, r *http.Request) {
-	if db != nil {
-		db.Exec("DELETE FROM miamala WHERE id=$1", r.URL.Query().Get("id"))
-	}
-	http.Redirect(w, r, "/", 302)
-}
-
-func exportCSV(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=Uwashusema_Mahida.csv")
-	writer := csv.NewWriter(w)
-	writer.Write([]string{"Tarehe", "Jina/Kikundi", "Aina", "Kiasi", "Maelezo"})
-	if db != nil {
-		rows, _ := db.Query(`SELECT TO_CHAR(tarehe,'YYYY-MM-DD HH24:MI:SS'),jina,aina,kiasi FROM miamala ORDER BY id DESC`)
-		if rows != nil {
-			for rows.Next() {
-				var t, j, a string
-				var k int64
-				rows.Scan(&t, &j, &a, &k)
-				desc := "Mwanachama"
-				if j == "Washusema Nzima" {
-					desc = "Ya Kikundi Nzima"
-				}
-				writer.Write([]string{t, j, a, fmt.Sprintf("%d", k), desc})
-			}
-		}
-		mapato, dharura, matumizi, mikopo := getTotals()
-		bakaa := (mapato + dharura) - (matumizi + mikopo)
-		writer.Write([]string{""})
-		writer.Write([]string{"BAKAA", fmt.Sprintf("%d", bakaa)})
-	}
-	writer.Flush()
-}
-
-func exportMikopo(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=Mikopo_Inayopungua.csv")
-	writer := csv.NewWriter(w)
-	writer.Write([]string{"Jina", "Mkopo Aliouchukua", "Jumla Marejesho", "Baki Anayodaiwa", "Tarehe ya Mkopo", "Status"})
-	if db != nil {
-		rows, _ := db.Query(`
-		SELECT m.jina, m.kiasi, COALESCE((SELECT SUM(kiasi) FROM marejesho_mikopo WHERE jina=m.jina),0), m.tarehe, m.baki, m.status
-		FROM mikopo m ORDER BY m.id DESC
-		`)
-		// query rahisi zaidi kwa render:
-		rows2, _ := db.Query(`SELECT jina,kiasi,baki,TO_CHAR(tarehe,'YYYY-MM-DD'),status FROM mikopo ORDER BY id DESC`)
-		if rows2 != nil {
-			for rows2.Next() {
-				var j, t, s string
-				var k, b int64
-				rows2.Scan(&j, &k, &b, &t, &s)
-				var marejesho int64 = k - b
-				writer.Write([]string{j, fmt.Sprintf("%d", k), fmt.Sprintf("%d", marejesho), fmt.Sprintf("%d", b), t, s})
-			}
-		}
-		_ = rows
-	}
-	writer.Flush()
-}
+				rows.Scan(&j, &k, &b
