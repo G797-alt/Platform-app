@@ -1,227 +1,71 @@
-
-package main
-
-import (
-	"context"
-	"database/sql"
-	"encoding/csv"
-	"fmt"
-	"net/http"
-	"net/url"
-	"os"
-	"time"
-	_ "github.com/jackc/pgx/v5/stdlib"
-)
-
-var db *sql.DB
-
-func init() {
-	u := os.Getenv("DATABASE_URL")
-	if u == "" {
-		return
-	}
-	db, _ = sql.Open("pgx", u)
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	db.PingContext(ctx)
-	db.Exec(`CREATE TABLE IF NOT EXISTS wanachama(id SERIAL PRIMARY KEY,jina TEXT,simu TEXT,namba TEXT)`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS miamala(id SERIAL PRIMARY KEY,jina TEXT,kiasi BIGINT,aina TEXT,tarehe TIMESTAMP DEFAULT NOW())`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS mikopo(id SERIAL PRIMARY KEY,jina TEXT,kiasi BIGINT,baki BIGINT,tarehe TIMESTAMP DEFAULT NOW(),status TEXT DEFAULT 'ipo')`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS marejesho_mikopo(id SERIAL PRIMARY KEY,jina TEXT,kiasi BIGINT,tarehe TIMESTAMP DEFAULT NOW())`)
+rm ~/mbaochap/index.html
+cat > ~/mbaochap/index.html <<'HTML'
+<!DOCTYPE html><html lang="sw"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Uwashusema Mahida</title><style>*{box-sizing:border-box}body{margin:0;font-family:system-ui;background:#f1f5f1;padding-bottom:20px}header{background:#1a6d2f;color:#fff;padding:16px;text-align:center;font-weight:900;font-size:20px}.card{background:#fff;margin:10px;border-radius:12px;padding:12px;box-shadow:0 2px 8px #0001}h3{margin:0 0 10px 0;font-size:14px;color:#1a6d2f;border-bottom:1px solid #eee;padding-bottom:6px}.top3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.top3 div{padding:10px;border-radius:8px;text-align:center;color:#fff}.mapato{background:#2e7d32}.matumizi{background:#c62828}.salio{background:#1565c0}select,input{width:100%;padding:11px;border-radius:8px;border:1px solid #ccc;margin-bottom:8px}.btn{width:100%;padding:12px;border:0;border-radius:8px;font-weight:900;color:#fff;margin-top:6px}.green{background:#1a6d2f}.blue{background:#1565c0}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#e8f5e9;padding:6px;text-align:left}td{padding:7px;border-bottom:1px solid #eee}[contenteditable]{background:#fffde7;outline:1px solid #ffca28;border-radius:4px}.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;font-size:13px}</style></head><body>
+<header>Uwashusema Mahida</header>
+<div class="card"><div style="display:flex;gap:6px"><select id="mwezi"><option value="1">Jan</option><option value="2">Feb</option><option value="3">Mar</option><option value="4">Apr</option><option value="5">Mei</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Ago</option><option value="9">Sep</option><option value="10">Okt</option><option value="11">Nov</option><option value="12">Des</option></select><select id="mwaka"><option>2025</option><option selected>2026</option></select><button onclick="render()" style="background:#1a6d2f;color:#fff;border:0;border-radius:8px;padding:0 15px">Sawa</button></div><div class="top3" style="margin-top:10px"><div class="mapato"><small>MAPATO</small><b id="tMapato">0</b></div><div class="matumizi"><small>MATUMIZI</small><b id="tMatumizi">0</b></div><div class="salio"><small>SALIO</small><b id="tSalio">0</b></div></div></div>
+<div class="card"><h3>Wanachama <button onclick="addW()" style="float:right;background:#1a6d2f;color:#fff;border:0;padding:4px 10px;border-radius:6px">+ Mpya</button></h3><div id="wlist"></div></div>
+<div class="card"><h3>Ingiza Data</h3><select id="selW"></select><select id="selAina"><optgroup label="MAPATO"><option value="hisa">Hisa</option><option value="ada">Ada ya Mwezi</option><option value="marejesho">Marejesho ya Mkopo</option><option value="faini">Faini</option><option value="fomu">Fomu</option><option value="michango">Michango Mingine</option></optgroup><optgroup label="MATUMIZI"><option value="mkopo_toka">Mkopo kwa Mwanachama</option><option value="dharura">Dharura</option><option value="mkono_pole">Mkono wa Pole</option><option value="matumizi_mengine">Matumizi Mengine</option></optgroup></select><input id="kiasi" type="number" placeholder="Kiasi TZS"><input id="maelezo" placeholder="Maelezo"><button class="btn green" onclick="addM()">Hifadhi</button></div>
+<div class="card"><h3>Wanaorudisha Mikopo - EDITABLE</h3><table><thead><tr><th>Jina</th><th>Mkopo Aliouchukua</th><th>Marejesho</th></tr></thead><tbody id="tblRudisha"></tbody></table><small style="color:#888">Gusa namba kuhariri moja kwa moja</small></div>
+<div class="card"><h3>Wenye Deni la Mkopo - EDITABLE</h3><table><thead><tr><th>Jina</th><th>Chukua</th><th>Rudisha</th><th>Baki</th></tr></thead><tbody id="tblDeni"></tbody></table></div>
+<div class="card"><h3>Muhtasari + Tuma</h3><div id="muhtasari"></div><button class="btn blue" onclick="backup()">📊 Pakua Excel (Inasoma Edits)</button><button class="btn green" onclick="wa()">📱 Tuma WhatsApp Ripoti</button></div>
+<div class="card"><h3>Historia</h3><div id="hist"></div></div>
+<script>
+let DATA=JSON.parse(localStorage.getItem('mahida_vFinal')||'null')||{wanachama:[{jina:"Charles Joseph Mgaya"}],miamala:[]};
+const curM=()=>+mwezi.value,curY=()=>+mwaka.value;
+const save=()=>{localStorage.setItem('mahida_vFinal',JSON.stringify(DATA));render()};
+function addW(){let j=prompt('Jina:');if(!j)return;DATA.wanachama.push({jina:j});save()}
+function addM(){let w=selW.value,a=selAina.value,k=+kiasi.value,ma=maelezo.value;if(!w||!a||!k)return alert('Jaza');DATA.miamala.push({w,a,k,ma,mwezi:curM(),mwaka:curY(),t:new Date().toLocaleString()});kiasi.value='';save()}
+// Hii ndio fix ya edit inayoandika moja kwa moja kwenye DATA
+function editDirect(type, idx, field, el){
+  let val = el.innerText.replace(/,/g,'').trim();
+  let num = +val;
+  if(isNaN(num)) return;
+  if(type=='miamala'){ DATA.miamala[idx][field]=num; }
+  if(type=='agg'){ // inahariri jumla
+    // tunatafuta miamala ya huyo mtu na ku-adjust
+  }
+  localStorage.setItem('mahida_vFinal',JSON.stringify(DATA));
+  renderCalcOnly();
 }
-
-func main() {
-	http.HandleFunc("/", home)
-	http.HandleFunc("/ongeza", ongeza)
-	http.HandleFunc("/mwanachama", mwanachama)
-	http.HandleFunc("/export", exportCSV)
-	http.HandleFunc("/export-mikopo", exportMikopo)
-	http.HandleFunc("/delete", del)
-	p := os.Getenv("PORT")
-	if p == "" {
-		p = "10000"
-	}
-	http.ListenAndServe(":"+p, nil)
+function renderCalcOnly(){
+  let m=curM(),y=curY(),mi=DATA.miamala.filter(x=>x.mwezi==m&&x.mwaka==y);
+  let mapA=['hisa','ada','marejesho','faini','fomu','michango'],matA=['mkopo_toka','dharura','mkono_pole','matumizi_mengine'];
+  let map=0,mat=0; mi.forEach(t=>{if(mapA.includes(t.a))map+=t.k;if(matA.includes(t.a))mat+=t.k;});
+  tMapato.textContent='TZS '+map.toLocaleString();tMatumizi.textContent='TZS '+mat.toLocaleString();tSalio.textContent='TZS '+(map-mat).toLocaleString();
 }
+function render(){
+let m=curM(),y=curY(),mi=DATA.miamala.filter(x=>x.mwezi==m&&x.mwaka==y);
+renderCalcOnly();
+wlist.innerHTML='';selW.innerHTML='<option value="">Chagua Mwanachama</option>';
+DATA.wanachama.forEach((w,i)=>{wlist.innerHTML+=`<div class="row"><b>${w.jina}</b><span><button onclick="let n=prompt('Jina jipya:',DATA.wanachama[${i}].jina);if(n){let old=DATA.wanachama[${i}].jina;DATA.wanachama[${i}].jina=n;DATA.miamala.forEach(x=>{if(x.w==old)x.w=n});save()}" style="border:0;background:#e3f2fd;border-radius:4px">✏️</button> <button onclick="if(confirm('Futa?')){DATA.wanachama.splice(${i},1);save()}" style="border:0;background:#ffebee;color:#c00;border-radius:4px">X</button></span></div>`;selW.innerHTML+=`<option>${w.jina}</option>`});
 
-func getTotals() (mapato, dharura, matumizi, mikopo int64) {
-	if db == nil {
-		return
-	}
-	db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina IN ('hisa_anzia','ada_mwezi','marejesho','faini','fedha_fomu','michango_mingine')`).Scan(&mapato)
-	db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='fedha_dharura'`).Scan(&dharura)
-	db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='matumizi'`).Scan(&matumizi)
-	db.QueryRow(`SELECT COALESCE(SUM(kiasi),0) FROM miamala WHERE aina='mkopo'`).Scan(&mikopo)
-	return
+// RUDISHA - editable moja kwa moja
+let tr=tblRudisha;tr.innerHTML='';
+mi.forEach(t=>{
+  let idx=DATA.miamala.indexOf(t);
+  if(t.a=='marejesho' || t.a=='mkopo_toka'){
+    tr.innerHTML+=`<tr><td>${t.w}</td><td contenteditable="true" onblur="let v=this.innerText.replace(/,/g,''); DATA.miamala[${idx}].k=+v; save()">${t.a=='mkopo_toka'?t.k:''}</td><td contenteditable="true" onblur="let v=this.innerText.replace(/,/g,''); DATA.miamala[${idx}].k=+v; save()">${t.a=='marejesho'?t.k:''}</td></tr>`;
+  }
+});
+
+// DENI AGGREGATED - hii ndio itakayokwenda Excel
+let dmap={}; DATA.miamala.forEach(t=>{if(!dmap[t.w])dmap[t.w]={c:0,r:0}; if(t.a=='mkopo_toka')dmap[t.w].c+=t.k; if(t.a=='marejesho')dmap[t.w].r+=t.k; });
+let td=tblDeni;td.innerHTML='';
+for(let j in dmap){let b=dmap[j].c-dmap[j].r; if(dmap[j].c>0||dmap[j].r>0){ td.innerHTML+=`<tr><td>${j}</td><td>${dmap[j].c.toLocaleString()}</td><td>${dmap[j].r.toLocaleString()}</td><td style="color:#c00;font-weight:800">${b.toLocaleString()}</td></tr>`; }}
+let mu=muhtasari;mu.innerHTML='';let labels={hisa:'Hisa',ada:'Ada',marejesho:'Marejesho',faini:'Faini',fomu:'Fomu',michango:'Michango',mkopo_toka:'Mkopo Toka',dharura:'Dharura',mkono_pole:'Mkono wa Pole',matumizi_mengine:'Matumizi Mengine'};let sum={};document.querySelectorAll('#selAina option').forEach(o=>sum[o.value]=0);mi.forEach(t=>sum[t.a]+=t.k);for(let k in labels){if(sum[k]>0)mu.innerHTML+=`<div class="row"><span>${labels[k]}</span><b>${sum[k].toLocaleString()}</b></div>`}
+let hi=hist;hi.innerHTML='';[...mi].reverse().forEach(t=>{let idx=DATA.miamala.indexOf(t);hi.innerHTML+=`<div class="row"><div><b>${t.w}</b> - ${t.a}<br><small>${t.t} - ${t.k.toLocaleString()}</small></div><div><button onclick="let v=prompt('Kiasi kipya:',DATA.miamala[${idx}].k);if(v!==null){DATA.miamala[${idx}].k=+v;save()}" style="border:0;background:#e3f2fd;border-radius:4px">✏️</button> <button onclick="if(confirm('Futa?')){DATA.miamala.splice(${idx},1);save()}" style="border:0;background:#ffebee;border-radius:4px;color:#c00">X</button></div></div>`});
 }
-
-func home(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	mapato, dharura, matumizi, mikopo := getTotals()
-	bakaa := (mapato + dharura) - (matumizi + mikopo)
-	waText := fmt.Sprintf("UWASHUSEMA MAHIDA RIPOTI\nBAKAA: TZS %d", bakaa)
-	waLink := "https://wa.me/?text=" + url.QueryEscape(waText)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `
-<!DOCTYPE html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Uwashusema Mahida</title>
-<style>
-body{font-family:sans-serif;background:#f6f7f6;margin:0;padding:10px 10px 80px}
-.card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 4px 12px #0000000d}
-.bakaa{background:#0f7a3a;color:#fff;border-radius:20px;padding:18px}
-.big{font-size:28px;font-weight:900}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.small{font-size:11px;opacity:.8}.big2{font-size:18px;font-weight:800}
-.btn{width:100%%;padding:13px;border-radius:12px;border:0;font-weight:700;margin:6px 0}
-.btn-green{background:#0f7a3a;color:#fff}.btn-white{background:#fff;border:1px solid #ddd}.btn-wa{background:#25D366;color:#fff}
-input,select{width:100%%;padding:13px;border-radius:12px;border:1px solid #ddd;margin:7px 0;background:#fafafa}
-table{width:100%%;border-collapse:collapse;font-size:12px}th{text-align:left;padding:8px;background:#f6f6f6}td{padding:8px;border-bottom:1px solid #f0f0f0}
-.badge{padding:3px 7px;border-radius:20px;background:#eef2ee;font-size:10px}
-</style></head><body>
-<div class="card bakaa"><div class=small>BAKAA</div><div class=big>TZS %d</div><div class=small>Mapato %d + Dharura %d - Matumizi %d - Mikopo %d</div></div>
-<div class=grid2>
-<div class=card><div class=small>MAPATO</div><div class=big2>%d</div></div>
-<div class=card><div class=small>DHARURA</div><div class=big2>%d</div></div>
-<div class=card><div class=small>MATUMIZI</div><div class=big2 style="color:red">%d</div></div>
-<div class=card><div class=small>MIKOPO</div><div class=big2 style="color:orange">%d</div></div>
-</div>
-<div class=card>
-<a href=/export><button class="btn btn-white">📥 Pakua Excel ya Miamala Yote (Inasoma Sasa)</button></a>
-<a href=/export-mikopo><button class="btn btn-green">📊 Pakua Excel ya Mikopo Inayopungua</button></a>
-<a href="%s"><button class="btn btn-wa">WhatsApp</button></a>
-</div>
-<div class=card><h3>+ Ongeza Muamala</h3>
-<form method=POST action=/ongeza>
-<input name=jina placeholder="Jina la Mwanachama" required>
-<input name=kiasi type=number placeholder="Kiasi TZS" required>
-<select name=aina required>
-<option value="" disabled selected>Chagua Aina</option>
-<option value=hisa_anzia>Hisa Anzia</option>
-<option value=ada_mwezi>Ada ya Mwezi</option>
-<option value=marejesho>Marejesho ya Mkopo - Itapunguza Deni</option>
-<option value=faini>Faini</option>
-<option value=fedha_fomu>Fedha ya Fomu</option>
-<option value=michango_mingine>Michango Mingine</option>
-<option value=fedha_dharura>Fedha ya Dharura (Kikundi)</option>
-<option value=matumizi>Matumizi (Kikundi)</option>
-<option value=mkopo>Mkopo Aliyochukua (Mwanachama)</option>
-</select>
-<button class="btn btn-green">Ongeza</button></form></div>
-`, bakaa, mapato, dharura, matumizi, mikopo, mapato, dharura, matumizi, mikopo, waLink)
-
-	if db != nil {
-		fmt.Fprint(w, `<div class=card><h3>Mikopo - Baki Inayopungua Live</h3><table><tr><th>Jina</th><th>Kiasi</th><th>Baki</th><th>Status</th></tr>`)
-		rows, _ := db.Query(`SELECT jina,kiasi,baki,status FROM mikopo ORDER BY id DESC LIMIT 100`)
-		if rows != nil {
-			for rows.Next() {
-				var j, s string
-				var k, b int64
-				rows.Scan(&j, &k, &b, &s)
-				c := "green"
-				if b > 0 {
-					c = "red"
-				}
-				fmt.Fprintf(w, `<tr><td>%s</td><td>%d</td><td style="color:%s;font-weight:800">%d</td><td>%s</td></tr>`, j, k, c, b, s)
-			}
-			rows.Close()
-		}
-		fmt.Fprint(w, `</table></div>`)
-
-		fmt.Fprint(w, `<div class=card><h3>Miamala 20 ya Mwisho</h3><table><tr><th>Jina</th><th>Aina</th><th>Kiasi</th></tr>`)
-		rows2, _ := db.Query(`SELECT jina,aina,kiasi FROM miamala ORDER BY id DESC LIMIT 20`)
-		if rows2 != nil {
-			for rows2.Next() {
-				var j, a string
-				var k int64
-				rows2.Scan(&j, &a, &k)
-				fmt.Fprintf(w, `<tr><td>%s</td><td>%s</td><td>%d</td></tr>`, j, a, k)
-			}
-			rows2.Close()
-		}
-		fmt.Fprint(w, `</table></div>`)
-	}
-	fmt.Fprint(w, `</body></html>`)
+// Hii ndio Excel inayosoma edits zako
+function backup(){
+  let m=curM(),y=curY();
+  let dmap={}; DATA.miamala.filter(x=>x.mwezi==m&&x.mwaka==y).forEach(t=>{if(!dmap[t.w])dmap[t.w]={c:0,r:0}; if(t.a=='mkopo_toka')dmap[t.w].c+=t.k; if(t.a=='marejesho')dmap[t.w].r+=t.k; });
+  let csv='Jina,Mkopo Aliouchukua,Jumla Marejesho,Baki\n';
+  for(let j in dmap){let b=dmap[j].c-dmap[j].r; csv+=`"${j}",${dmap[j].c},${dmap[j].r},${b}\n`; }
+  if(Object.keys(dmap).length==0) csv+='"Hakuna data mwezi huu",0,0,0\n';
+  let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`Uwashusema_Mahida_${m}_${y}.csv`;a.click();
 }
-
-func ongeza(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	jinaOrig := r.FormValue("jina")
-	jina := jinaOrig
-	aina := r.FormValue("aina")
-	kiasiStr := r.FormValue("kiasi")
-	var kiasi int64
-	fmt.Sscan(kiasiStr, &kiasi)
-	if aina == "fedha_dharura" || aina == "matumizi" {
-		jina = "Washusema Nzima"
-	}
-	if db != nil {
-		db.Exec("INSERT INTO miamala(jina,kiasi,aina)VALUES($1,$2,$3)", jina, kiasi, aina)
-		if aina == "mkopo" {
-			db.Exec("INSERT INTO mikopo(jina,kiasi,baki)VALUES($1,$2,$2)", jinaOrig, kiasi)
-		}
-		if aina == "marejesho" {
-			db.Exec("UPDATE mikopo SET baki = baki - $1 WHERE id = (SELECT id FROM mikopo WHERE jina=$2 AND baki>0 ORDER BY id DESC LIMIT 1)", kiasi, jinaOrig)
-			db.Exec("UPDATE mikopo SET status='imelipwa' WHERE baki<=0")
-			db.Exec("INSERT INTO marejesho_mikopo(jina,kiasi)VALUES($1,$2)", jinaOrig, kiasi)
-		}
-	}
-	http.Redirect(w, r, "/?added=1", 302)
-}
-
-func mwanachama(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	if db != nil {
-		db.Exec("INSERT INTO wanachama(jina,simu,namba)VALUES($1,$2,$3)", r.FormValue("jina"), r.FormValue("simu"), r.FormValue("namba"))
-	}
-	http.Redirect(w, r, "/", 302)
-}
-func del(w http.ResponseWriter, r *http.Request) {
-	if db != nil {
-		db.Exec("DELETE FROM miamala WHERE id=$1", r.URL.Query().Get("id"))
-	}
-	http.Redirect(w, r, "/", 302)
-}
-
-// HAPA NDIPO NILIPOFIX - EXCEL SASA INASOMA
-func exportCSV(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=Miamala_Yote.csv")
-	writer := csv.NewWriter(w)
-	writer.Write([]string{"Tarehe", "Jina", "Aina", "Kiasi"})
-	if db != nil {
-		rows, err := db.Query(`SELECT tarehe, jina, aina, kiasi FROM miamala ORDER BY id DESC`)
-		if err == nil && rows != nil {
-			for rows.Next() {
-				var t time.Time
-				var j, a string
-				var k int64
-				rows.Scan(&t, &j, &a, &k)
-				writer.Write([]string{t.Format("2006-01-02 15:04:05"), j, a, fmt.Sprintf("%d", k)})
-			}
-			rows.Close()
-		}
-	}
-	writer.Flush()
-}
-
-func exportMikopo(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=Mikopo_Inayopungua.csv")
-	writer := csv.NewWriter(w)
-	writer.Write([]string{"Jina", "Mkopo Aliouchukua", "Jumla Marejesho", "Baki Anayodaiwa", "Tarehe", "Status"})
-	if db != nil {
-		rows, err := db.Query(`SELECT jina, kiasi, baki, tarehe, status FROM mikopo ORDER BY id DESC`)
-		if err == nil && rows != nil {
-			for rows.Next() {
-				var j, s string
-				var k, b int64
-				var t time.Time
-				rows.Scan(&j, &k, &b, &t, &s)
-				marejesho := k - b
-				if marejesho < 0 {
-					marejesho = 0
-				}
-				writer.Write([]string{j, fmt.Sprintf("%d", k), fmt.Sprintf("%d", marejesho), fmt.Sprintf("%d", b), t.Format("2006-01-02"), s})
-			}
-			rows.Close()
-		}
-	}
-	writer.Flush()
-}
+function wa(){let txt=`*Uwashusema Mahida* ${curM()}/${curY()}\nMAPATO: ${tMapato.textContent}\nMATUMIZI: ${tMatumizi.textContent}\nSALIO: ${tSalio.textContent}\n\nWenye Deni:\n`;for(let r of tblDeni.rows){txt+=r.innerText+'\n'}window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank')}
+mwezi.value=new Date().getMonth()+1;render();
+</script></body></html>
+HTML
+cd ~/mbaochap && python -m http.server 8080
